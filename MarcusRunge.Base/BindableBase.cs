@@ -2,7 +2,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace MarcusRunge.Core
+namespace MarcusRunge.Base
 {
     /// <summary>
     /// Base class for ViewModels (or other bindable objects) that provides

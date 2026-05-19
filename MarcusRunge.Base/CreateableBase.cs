@@ -2,7 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace MarcusRunge.Core
+namespace MarcusRunge.Base
 {
     /// <summary>
     /// Provides a contract for components that expose their creation state and a creation notification event.
