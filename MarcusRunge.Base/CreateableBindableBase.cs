@@ -95,7 +95,7 @@ namespace MarcusRunge.Base
         public bool IsCreated => Volatile.Read(ref _isCreated) == 1;
 
         // Factory method to create/get the singleton instance.
-        internal static TInterface Create(TBase @base)
+        public static TInterface Create(TBase @base)
         {
             // Method purpose:
             // - Ensure the singleton instance exists (synchronous part).
