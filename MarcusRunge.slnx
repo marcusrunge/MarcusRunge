@@ -4,6 +4,8 @@
     <File Path="LICENSE.txt" />
     <File Path="README.md" />
   </Folder>
+  <Project Path="MarcusRunge.Base.EntityFramework.Test/MarcusRunge.Base.EntityFramework.Test.csproj" Id="fb2b55ad-b285-4d07-838e-b5e3f9e6ff4d" />
+  <Project Path="MarcusRunge.Base.EntityFramework/MarcusRunge.Base.EntityFramework.csproj" Id="0399b539-f74a-4d41-9be5-cc3eb61a3b7e" />
   <Project Path="MarcusRunge.Base.Tests/MarcusRunge.Base.Test.csproj" Id="b6c419d4-9dd8-490d-93c4-f3d0ae8d297b" />
   <Project Path="MarcusRunge.Base/MarcusRunge.Base.csproj" />
   <Project Path="MarcusRunge.Toolbox.Test/MarcusRunge.Toolbox.Test.csproj" Id="d5273a76-ec7b-4fe9-8d66-79ead4e265ab" />

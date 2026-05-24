@@ -14,14 +14,14 @@ namespace MarcusRunge.Base
         where TClass : CreateableBindableBase<TInterface, TClass, TBase>, TInterface, new()
     {
         // Global synchronization for singleton creation and starting the async initialization exactly once.
-        private static readonly Lock _sync = new();
+        private static readonly object _sync = new object();
 
         private static Exception? _initializationException;
         private static Task? _initTask;
         private static TClass? _instance;
 
         //Instance-level synchronization for event handler registration and draining(invocation after "created" flips).
-        private readonly Lock _createdLock = new();
+        private readonly object _createdLock = new object();
 
         private EventHandler? _createdHandlers;
 

@@ -1,7 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace MarcusRunge.Base
+namespace MarcusRunge.Base.EntityFramework
 {
     /// <summary>
     /// Provides a base class for entity configurations.
