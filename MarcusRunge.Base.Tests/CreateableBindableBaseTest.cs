@@ -2,11 +2,17 @@
 
 namespace MarcusRunge.Base.Test
 {
+    /// <summary>
+    /// Contains unit tests for the <see cref="CreateableBindableBase{TBase, TConcrete, TInitializationResult}"/> class.
+    /// </summary>
     public class CreateableBindableBaseTest
     {
         private interface ITestCreateable
         { }
 
+        /// <summary>
+        /// Creates the should call on create exactly once.
+        /// </summary>
         [Fact]
         public void Create_ShouldCallOnCreate_ExactlyOnce()
         {
@@ -22,6 +28,9 @@ namespace MarcusRunge.Base.Test
             Assert.Equal(1, TestCreateable.SyncCreateCount);
         }
 
+        /// <summary>
+        /// Creates the should initialize and raise on created.
+        /// </summary>
         [Fact]
         public async Task Create_ShouldInitializeAndRaiseOnCreated()
         {
@@ -38,6 +47,9 @@ namespace MarcusRunge.Base.Test
             Assert.True(raised);
         }
 
+        /// <summary>
+        /// Creates the should return same instance.
+        /// </summary>
         [Fact]
         public async Task Create_ShouldReturnSameInstance()
         {
@@ -51,6 +63,9 @@ namespace MarcusRunge.Base.Test
             Assert.Same(first, second);
         }
 
+        /// <summary>
+        /// Creates the when called concurrently returns single instance.
+        /// </summary>
         [Fact]
         public async Task Create_WhenCalledConcurrently_ReturnsSingleInstance()
         {
@@ -66,6 +81,9 @@ namespace MarcusRunge.Base.Test
             Assert.All(results, r => Assert.Same(first, r));
         }
 
+        /// <summary>
+        /// Initializations the should run only once.
+        /// </summary>
         [Fact]
         public async Task Initialization_ShouldRunOnlyOnce()
         {
@@ -82,6 +100,9 @@ namespace MarcusRunge.Base.Test
             Assert.Equal(1, TestCreateable.AsyncCallCount);
         }
 
+        /// <summary>
+        /// Initializations the when throws exception is captured.
+        /// </summary>
         [Fact]
         public async Task Initialization_WhenThrows_ExceptionIsCaptured()
         {
@@ -94,6 +115,9 @@ namespace MarcusRunge.Base.Test
             Assert.NotNull(systemUnderTest.InitializationException);
         }
 
+        /// <summary>
+        /// Called when [created when subscribed after creation is called immediately].
+        /// </summary>
         [Fact]
         public async Task OnCreated_WhenSubscribedAfterCreation_IsCalledImmediately()
         {

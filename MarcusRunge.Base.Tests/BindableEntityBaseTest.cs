@@ -1,7 +1,13 @@
 ﻿namespace MarcusRunge.Base.Test
 {
+    /// <summary>
+    /// Contains unit tests for the <see cref="BindableEntityBase"/> class.
+    /// </summary>
     public class BindableEntityBaseTest
     {
+        /// <summary>
+        /// Constructors the with identifier sets identifier.
+        /// </summary>
         [Fact]
         public void Constructor_WithId_SetsId()
         {
@@ -12,6 +18,9 @@
             Assert.Equal(42, systemUnderTest.Id);
         }
 
+        /// <summary>
+        /// Identifiers the uses set property from base class.
+        /// </summary>
         [Fact]
         public void Id_UsesSetProperty_FromBaseClass()
         {
@@ -30,6 +39,9 @@
             Assert.Equal(nameof(TestEntity.Id), raisedProperty);
         }
 
+        /// <summary>
+        /// Rows the version does not raise property changed.
+        /// </summary>
         [Fact]
         public void RowVersion_DoesNotRaisePropertyChanged()
         {

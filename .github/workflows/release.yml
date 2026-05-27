@@ -5,6 +5,9 @@ on:
     branches:
       - release
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   publish:
     runs-on: windows-latest
@@ -30,8 +33,26 @@ jobs:
       - name: Pack
         run: dotnet pack MarcusRunge.slnx --configuration Release --no-build --output ./artifacts
 
+      - name: Show packages
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path ./artifacts -Recurse
+
       - name: Push to NuGet
-        run: dotnet nuget push "./artifacts/*.nupkg" \
-              --api-key ${{ secrets.NUGET_API_KEY }} \
-              --source https://api.nuget.org/v3/index.json \
+        shell: pwsh
+        run: |
+          $packages = Get-ChildItem -Path ./artifacts -Filter *.nupkg -Recurse |
+            Where-Object { $_.Name -notlike "*.symbols.nupkg" }
+
+          if ($packages.Count -eq 0) {
+            throw "No .nupkg files found in ./artifacts"
+          }
+
+          foreach ($package in $packages) {
+            Write-Host "Pushing $($package.FullName)"
+
+            dotnet nuget push $package.FullName `
+              --api-key "${{ secrets.NUGET_API_KEY }}" `
+              --source "https://api.nuget.org/v3/index.json" `
               --skip-duplicate
+          }

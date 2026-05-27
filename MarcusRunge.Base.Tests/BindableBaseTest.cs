@@ -1,7 +1,13 @@
 ﻿namespace MarcusRunge.Base.Test
 {
+    /// <summary>
+    /// Contains unit tests for the <see cref="BindableBase"/> class.
+    /// </summary>
     public class BindableBaseTest
     {
+        /// <summary>
+        /// Sets the property when value changes updates value and raises property changed.
+        /// </summary>
         [Fact]
         public void SetProperty_WhenValueChanges_UpdatesValueAndRaisesPropertyChanged()
         {
@@ -20,6 +26,9 @@
             Assert.Equal(nameof(TestBindableBase.Name), raisedProperties[0]);
         }
 
+        /// <summary>
+        /// Sets the property when value is equal does not raise property changed.
+        /// </summary>
         [Fact]
         public void SetProperty_WhenValueIsEqual_DoesNotRaisePropertyChanged()
         {
@@ -37,6 +46,9 @@
             Assert.Equal("Test", systemUnderTest.Name);
         }
 
+        /// <summary>
+        /// Sets the property when value changes returns true.
+        /// </summary>
         [Fact]
         public void SetProperty_WhenValueChanges_ReturnsTrue()
         {
@@ -51,6 +63,9 @@
             Assert.Equal("Test", systemUnderTest.Name);
         }
 
+        /// <summary>
+        /// Sets the property when value is equal returns false.
+        /// </summary>
         [Fact]
         public void SetProperty_WhenValueIsEqual_ReturnsFalse()
         {
@@ -65,6 +80,9 @@
             Assert.Equal("Test", systemUnderTest.Name);
         }
 
+        /// <summary>
+        /// Called when [property changed when called explicitly raises property changed with given name].
+        /// </summary>
         [Fact]
         public void OnPropertyChanged_WhenCalledExplicitly_RaisesPropertyChangedWithGivenName()
         {
@@ -81,6 +99,9 @@
             Assert.Equal("CustomProperty", raisedPropertyName);
         }
 
+        /// <summary>
+        /// Called when [property changed when called without subscribers does not throw].
+        /// </summary>
         [Fact]
         public void OnPropertyChanged_WhenCalledWithoutSubscribers_DoesNotThrow()
         {
@@ -91,7 +112,7 @@
             var exception = Record.Exception(() => systemUnderTest.RaisePropertyChanged("Name"));
             Assert.Null(exception);
         }
-
+        
         private sealed class TestBindableBase : BindableBase
         {
             private string? _name;

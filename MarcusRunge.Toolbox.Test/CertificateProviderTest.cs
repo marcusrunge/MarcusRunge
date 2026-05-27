@@ -6,8 +6,14 @@
 
     namespace MarcusRunge.Toolbox.Test
     {
+        /// <summary>
+        /// Contains unit tests for the <see cref="CertificateProvider"/> class.
+        /// </summary>
         public class CertificateProviderTest
         {
+            /// <summary>
+            /// Creates the certificate should return certificate.
+            /// </summary>
             [Fact]
             public void CreateCertificate_ShouldReturnCertificate()
             {
@@ -23,6 +29,9 @@
                 Assert.NotNull(certificate);
             }
 
+            /// <summary>
+            /// Creates the name of the certificate should contain common.
+            /// </summary>
             [Fact]
             public void CreateCertificate_ShouldContainCommonName()
             {
@@ -38,6 +47,9 @@
                 Assert.Contains($"CN={commonName}", certificate.Subject);
             }
 
+            /// <summary>
+            /// Creates the certificate should have private key.
+            /// </summary>
             [Fact]
             public void CreateCertificate_ShouldHavePrivateKey()
             {
@@ -52,6 +64,9 @@
                 Assert.True(certificate.HasPrivateKey);
             }
 
+            /// <summary>
+            /// Creates the certificate should use requested key size.
+            /// </summary>
             [Fact]
             public void CreateCertificate_ShouldUseRequestedKeySize()
             {
@@ -73,6 +88,9 @@
                 Assert.Equal(keySize, rsa!.KeySize);
             }
 
+            /// <summary>
+            /// Creates the certificate should be self signed.
+            /// </summary>
             [Fact]
             public void CreateCertificate_ShouldBeSelfSigned()
             {
@@ -87,6 +105,9 @@
                 Assert.Equal(certificate.Subject, certificate.Issuer);
             }
 
+            /// <summary>
+            /// Creates the certificate should contain server authentication eku.
+            /// </summary>
             [Fact]
             public void CreateCertificate_ShouldContainServerAuthenticationEku()
             {
@@ -109,6 +130,9 @@
                     oid => oid.Value == "1.3.6.1.5.5.7.3.1");
             }
 
+            /// <summary>
+            /// Creates the certificate should contain digital signature and key encipherment key usage.
+            /// </summary>
             [Fact]
             public void CreateCertificate_ShouldContainDigitalSignatureAndKeyEncipherment()
             {
@@ -133,6 +157,9 @@
                     keyUsage.KeyUsages.HasFlag(X509KeyUsageFlags.KeyEncipherment));
             }
 
+            /// <summary>
+            /// Creates the certificate should contain subject alternative name.
+            /// </summary>
             [Fact]
             public void CreateCertificate_ShouldContainSubjectAlternativeName()
             {
@@ -152,6 +179,9 @@
                 Assert.NotNull(sanExtension);
             }
 
+            /// <summary>
+            /// Creates the certificate should respect validity period.
+            /// </summary>
             [Fact]
             public void CreateCertificate_ShouldRespectValidityPeriod()
             {

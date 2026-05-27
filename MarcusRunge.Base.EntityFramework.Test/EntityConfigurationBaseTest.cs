@@ -3,8 +3,14 @@ using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace MarcusRunge.Base.EntityFramework.Test
 {
+    /// <summary>
+    /// Contains unit tests for the <see cref="EntityConfigurationBase{TEntity, TConfiguration}"/> class.
+    /// </summary>
     public class EntityConfigurationBaseTest
     {
+        /// <summary>
+        /// Configures the should configure identifier as value generated on add.
+        /// </summary>
         [Fact]
         public void Configure_ShouldConfigureId_AsValueGeneratedOnAdd()
         {
@@ -24,6 +30,9 @@ namespace MarcusRunge.Base.EntityFramework.Test
             Assert.Equal(ValueGenerated.OnAdd, property!.ValueGenerated);
         }
 
+        /// <summary>
+        /// Configures the should configure row version as concurrency token with correct generation.
+        /// </summary>
         [Fact]
         public void Configure_ShouldConfigureRowVersion_AsConcurrencyToken_WithCorrectGeneration()
         {
@@ -44,6 +53,9 @@ namespace MarcusRunge.Base.EntityFramework.Test
             Assert.Equal(ValueGenerated.OnAddOrUpdate, property.ValueGenerated);
         }
 
+        /// <summary>
+        /// Configures the should set primary key identifier.
+        /// </summary>
         [Fact]
         public void Configure_ShouldSetPrimaryKey_Id()
         {
@@ -63,6 +75,9 @@ namespace MarcusRunge.Base.EntityFramework.Test
             Assert.Equal(nameof(TestEntity.Id), key.Properties[0].Name);
         }
 
+        /// <summary>
+        /// Creates the should return new instance each time.
+        /// </summary>
         [Fact]
         public void Create_ShouldReturnNewInstance_EachTime()
         {
