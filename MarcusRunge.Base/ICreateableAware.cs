@@ -1,4 +1,7 @@
-﻿namespace MarcusRunge.Base
+﻿using System;
+using System.Threading.Tasks;
+
+namespace MarcusRunge.Base
 {
     /// <summary>
     /// Provides a contract for components that expose their creation state and a creation notification event.
@@ -6,15 +9,12 @@
     public interface ICreateableAware
     {
         /// <summary>
-        /// Gets the event that is raised when the instance is created.
+        /// Raised when the instance is created (transition to the created state).
         /// </summary>
-        public event EventHandler OnCreated;
+        event EventHandler? OnCreated;
 
         /// <summary>
-        /// Occurs when the instance is created.
-        /// </summary>
-        /// <summary>
-        /// Gets a task that represents the asynchronous initialization process of the instance. If the instance is already created, this property may return null.
+        /// Gets a task that represents the asynchronous initialization process of the instance. May be null if initialization has not been started.
         /// </summary>
         Task? Initialization { get; }
 
@@ -24,8 +24,13 @@
         Exception? InitializationException { get; }
 
         /// <summary>
-        /// Gets a value indicating whether the instance has been created.
+        /// Gets a value indicating whether the instance has been created (initialization completed successfully).
         /// </summary>
-        public bool IsCreated { get; }
+        bool IsCreated { get; }
+
+        /// <summary>
+        /// Gets a value indicating whether initialization has been started and not yet completed.
+        /// </summary>
+        bool IsInitializing { get; }
     }
 }

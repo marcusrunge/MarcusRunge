@@ -1,4 +1,12 @@
-﻿namespace MarcusRunge.Base
+﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Threading.Tasks.Sources;
+using System.Runtime.CompilerServices;
+using System.Collections.Generic;
+using System.Diagnostics;
+
+namespace MarcusRunge.Base
 {
     /// <summary>
     /// Public base type that provides thread-safe creation and one-time async initialization for a singleton-like instance.
@@ -16,46 +24,28 @@
         private static Task? _initTask;
         private static TClass? _instance;
 
-        //Instance-level synchronization for event handler registration and draining(invocation after "created" flips).
+        // Instance-level synchronization for event handler registration and draining (invocation after "created" flips).
         private readonly object _createdLock = new();
 
         private EventHandler? _createdHandlers;
 
         // 0 = not created; 1 = created (written via Interlocked, read via Volatile).
-        private int _isCreated;
+        private static int _isCreated;
 
         ///<inheritdoc />
-        public event EventHandler OnCreated
+        public event EventHandler? OnCreated
         {
             add
             {
-                // Method purpose:
-                // - Register a callback that should run when the instance becomes "created".
-                // - If the instance is already created, invoke the handler immediately (late subscribers are notified instantly).
-
-                // Guard clause:
-                // - Ignore null handlers to avoid exceptions and unnecessary locking.
                 if (value is null) return;
-
-                // Fast-path (no lock):
-                // - If creation already happened, call the handler immediately and return.
-                // - This avoids locking for the common "already created" case.
                 if (IsCreated)
                 {
                     value(this, EventArgs.Empty);
                     return;
                 }
 
-                // Slow-path:
-                // - The instance is not created (as observed right now), so we try to register the handler.
-                // - We must lock because:
-                //   1) multiple threads may add/remove simultaneously
-                //   2) the "created" transition drains and clears the handler list
                 lock (_createdLock)
                 {
-                    // Double-check under the lock:
-                    // - Creation might have completed between the earlier IsCreated check and acquiring the lock.
-                    // - If still not created, we safely append to the multicast delegate and exit.
                     if (!IsCreated)
                     {
                         _createdHandlers += value;
@@ -63,16 +53,10 @@
                     }
                 }
 
-                // Race resolution:
-                // - If we get here, creation completed while we were locking.
-                // - We must still honor the contract: late subscribers are notified.
                 value(this, EventArgs.Empty);
             }
             remove
             {
-                // Method purpose:
-                // - Unregister a previously added handler.
-                // - Uses a lock to synchronize with concurrent additions and with the "drain + clear" on creation.
                 if (value is null) return;
                 lock (_createdLock)
                 {
@@ -81,157 +65,167 @@
             }
         }
 
-        ///<inheritdoc />
+        /// <summary>
+        /// The task representing asynchronous initialization, if it has been started.
+        /// </summary>
         public Task? Initialization => Volatile.Read(ref _initTask);
 
-        ///<inheritdoc />
+        /// <summary>
+        /// The exception captured when initialization failed (if any).
+        /// </summary>
         public Exception? InitializationException => Volatile.Read(ref _initializationException);
 
-        ///<inheritdoc />
+        /// <summary>
+        /// True if the instance has transitioned to the created/completed state.
+        /// </summary>
         public bool IsCreated => Volatile.Read(ref _isCreated) == 1;
+
+        /// <summary>
+        /// True if initialization has been started but not yet completed.
+        /// </summary>
+        public bool IsInitializing => Volatile.Read(ref _initTask) != null && !Volatile.Read(ref _initTask)!.IsCompleted;
 
         /// <summary>
         /// Factory method to create the singleton instance and start async initialization. The instance is created synchronously on the first call, and async initialization is triggered once and only once. Subsequent calls return the already created instance. The provided base parameter is passed to both the synchronous and asynchronous creation hooks for flexible setup.
         /// </summary>
-        /// <param name="base"></param>
-        /// <returns></returns>
+        /// <param name="base">Initialization parameter</param>
+        /// <returns>The created instance as TInterface.</returns>
         public static TInterface Create(TBase @base)
         {
-            // Method purpose:
-            // - Ensure the singleton instance exists (synchronous part).
-            // - Ensure async initialization is started (exactly once).
-            // - Return the created instance cast as TInterface.
-
-            // Step 1:
-            // - Create the instance if it does not exist yet.
             EnsureCreated(@base);
-
-            // Step 2:
-            // - Start async initialization if it has not been started yet.
-            EnsureAsyncInitStarted(@base);
-
-            // Step 3:
-            // - Return the instance (null-forgiving because EnsureCreated guarantees it under normal flow).
+            EnsureAsyncInitStarted(@base, CancellationToken.None);
             return _instance!;
         }
 
         /// <summary>
-        /// Initialization hook for synchronous setup during instance creation. This runs exactly once on the first call to <see cref="Create(TBase)"/> before the instance is published. Implementers can use this to perform any necessary setup that must happen before the instance is visible to other threads (e.g., populating fields that async initialization depends on). Note that this runs on the calling thread of <see cref="Create(TBase)"/>, so it should avoid long-running work to prevent blocking callers.
+        /// Async factory that ensures creation and waits for asynchronous initialization to complete. The CancellationToken only affects waiting; the initialization task itself is controlled by the first caller that starts it.
+        /// </summary>
+        /// <param name="base">Initialization parameter</param>
+        /// <param name="cancellationToken">Cancellation token for the caller waiting on completion.</param>
+        /// <returns>The created instance as TInterface.</returns>
+        public static async Task<TInterface> CreateAsync(TBase @base, CancellationToken cancellationToken = default)
+        {
+            EnsureCreated(@base);
+            EnsureAsyncInitStarted(@base, cancellationToken);
+
+            // Wait for the initialization task to complete. We rethrow any exceptions that fault the initialization.
+            var task = Volatile.Read(ref _initTask);
+            if (task is null)
+                return _instance!; // nothing to wait for
+
+            await WaitWithCancellation(task, cancellationToken).ConfigureAwait(false);
+
+            // Propagate stored exception if present (await would already rethrow), return instance.
+            return _instance!;
+        }
+
+        /// <summary>
+        /// Initialization hook for synchronous setup during instance creation. This runs exactly once on the first call to Create before the instance is published.
         /// </summary>
         /// <param name="base">The base parameter for initialization.</param>
         protected abstract void OnCreate(TBase @base);
 
         /// <summary>
-        /// Initialization hook for asynchronous setup during instance creation. This runs exactly once on the first call to <see cref="Create(TBase)"/> after the instance is published. Implementers can use this to perform any necessary setup that must happen asynchronously (e.g., fetching data from a remote source).
+        /// Initialization hook for asynchronous setup during instance creation. This runs exactly once on the first call to Create before the instance is transitioned to created.
         /// </summary>
         /// <param name="base">The base parameter for initialization.</param>
         /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
         protected abstract Task OnCreateAsync(TBase @base, CancellationToken cancellationToken);
 
-        private static void EnsureAsyncInitStarted(TBase @base)
+        private static void EnsureAsyncInitStarted(TBase @base, CancellationToken cancellationToken)
         {
-            // Method purpose:
-            // - Start the async initialization once and only once for the singleton instance.
-            // - Record a failure (base exception) if the initialization task faults.
-
-            // Fast-path (no lock):
-            // - If initialization task already exists, there is nothing to do.
             if (Volatile.Read(ref _initTask) != null) return;
 
-            // Slow-path (locked):
-            // - Synchronize with other threads that might start initialization concurrently.
             lock (_sync)
             {
-                // Double-check under the lock:
-                // - Another thread might have started initialization between our first check and taking the lock.
                 if (_initTask != null) return;
-
-                // Safety check:
-                // - Initialization requires a created instance; if it's missing, this indicates an invalid call order.
                 if (_instance is null) throw new InvalidOperationException("Instance not created.");
 
-                // Start initialization:
-                // - Store the task so that subsequent calls see it and do not start again.
-                _initTask = _instance.InitializeAsync(@base);
+                // Start initialization using the provided token. Only the first caller's token is used by the initialization task.
+                _initTask = _instance.InitializeAsync(@base, cancellationToken);
             }
         }
 
         private static void EnsureCreated(TBase @base)
         {
-            // Method purpose:
-            // - Create the singleton instance exactly once.
-            // - Run the synchronous creation hook before publishing the instance.
-
-            // Fast-path (no lock):
-            // - If instance already exists, return immediately.
             if (_instance != null) return;
 
-            // Slow-path (locked):
-            // - Synchronize to ensure only one thread constructs and publishes the singleton instance.
             lock (_sync)
             {
-                // Double-check under the lock:
-                // - Another thread may have created the instance while we were waiting for the lock.
                 if (_instance != null) return;
-
-                // Create concrete instance:
-                // - Requires 'new()' constraint on TClass.
                 var inst = new TClass();
-
-                // Run synchronous setup:
-                // - This allows derived implementations to populate fields/state needed before publication.
                 inst.OnCreate(@base);
-
-                // Publish instance:
-                // - After this assignment, other threads may observe _instance as non-null.
                 _instance = inst;
             }
         }
 
-        private async Task InitializeAsync(TBase @base)
+        private async Task InitializeAsync(TBase @base, CancellationToken cancellationToken)
         {
-            // Method purpose:
-            // - Perform the asynchronous initialization hook.
-            // - Transition the instance into the "created" state exactly once.
-            // - Notify and drain registered OnCreated handlers exactly once.
             try
             {
-                // Run async creation hook:
-                // - Uses CancellationToken.None here (caller controls cancellation outside this contract).
-                // - ConfigureAwait(false) avoids capturing context, suitable for library/internal code.
-                await OnCreateAsync(@base, CancellationToken.None).ConfigureAwait(false);
+                await OnCreateAsync(@base, cancellationToken).ConfigureAwait(false);
 
-                // State transition (exactly once):
-                // - Interlocked.Exchange returns the previous value.
-                // - If it was 0, this call performs the first transition to "created".
                 if (Interlocked.Exchange(ref _isCreated, 1) == 0)
                 {
                     EventHandler? handlers;
-
-                    // Drain handlers under lock:
-                    // - We take a snapshot and clear the field so:
-                    //   1) handlers run at most once
-                    //   2) memory can be released
-                    //   3) concurrent add/remove is synchronized
                     lock (_createdLock)
                     {
                         handlers = _createdHandlers;
                         _createdHandlers = null;
                     }
-
-                    // Invoke outside the lock:
-                    // - Prevents handlers from running under a lock (avoids deadlocks/reentrancy issues).
                     handlers?.Invoke(this, EventArgs.Empty);
                 }
             }
             catch (Exception ex)
             {
-                // Failure behavior:
-                // - Record the exception for internal diagnostics and rethrow to fault the initialization task.
                 Volatile.Write(ref _initializationException, ex);
                 throw;
             }
         }
+
+        /// <summary>
+        /// Helper to await a task while honoring a caller cancellation token on platforms where Task.WaitAsync may not be available.
+        /// </summary>
+        private static async Task WaitWithCancellation(Task task, CancellationToken cancellationToken)
+        {
+            if (!cancellationToken.CanBeCanceled)
+            {
+                await task.ConfigureAwait(false);
+                return;
+            }
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var tcs = new TaskCompletionSource<object?>();
+            using (cancellationToken.Register(state => ((TaskCompletionSource<object?>)state!).TrySetCanceled(), tcs))
+            {
+                var completed = await Task.WhenAny(task, tcs.Task).ConfigureAwait(false);
+                if (completed == tcs.Task)
+                    throw new OperationCanceledException(cancellationToken);
+                await task.ConfigureAwait(false); // propagate exceptions if any
+            }
+        }
+
+        /// <summary>
+        /// Resets the static singleton and initialization state. Intended for unit tests only.</summary>
+        internal static void ResetForTests()
+        {
+            lock (_sync)
+            {
+                _instance = null;
+                _initTask = null;
+                _initializationException = null;
+                Volatile.Write(ref _isCreated, 0);
+            }
+        }
+
+        // Explicit interface implementations to satisfy ICreateableAware (instance view of the singleton state).
+        Task? ICreateableAware.Initialization => Initialization;
+
+        Exception? ICreateableAware.InitializationException => InitializationException;
+
+        bool ICreateableAware.IsCreated => IsCreated;
+
+        bool ICreateableAware.IsInitializing => IsInitializing;
     }
 }
