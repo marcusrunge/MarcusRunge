@@ -36,7 +36,12 @@
 		<ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
 	</PropertyGroup>
 
-	<!-- Versioning -->
+	<!-- MinVer Versioning -->
+	<PropertyGroup>
+		<!-- Tags beginning with "v" -->
+		<MinVerTagPrefix>v</MinVerTagPrefix>
+	</PropertyGroup>
+
 	<ItemGroup>
 		<PackageReference Include="MinVer" Version="7.0.0" PrivateAssets="all" />
 	</ItemGroup>

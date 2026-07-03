@@ -15,6 +15,22 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Ensure tag is based on release branch
+        shell: pwsh
+        run: |
+          git fetch origin release
+          git branch --remotes --contains HEAD
+
+          $isOnRelease = git branch --remotes --contains HEAD | Select-String "origin/release"
+
+          if (-not $isOnRelease) {
+            Write-Host "Tag is NOT based on release branch -> abort"
+            exit 1
+          } else {
+            Write-Host "✅ Tag is based on release branch"
+          }
 
       - name: Ensure tag is based on release branch
         shell: pwsh
