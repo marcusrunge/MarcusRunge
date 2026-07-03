@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel;
 using System.Globalization;
 
-namespace MarcusRunge.Toolbox.Localization
+namespace MarcusRunge.Toolbox.Localization.Core
 {
     /// <summary>
     /// Converts enum values to their localized description if a DescriptionAttribute is present.
