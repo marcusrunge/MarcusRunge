@@ -1,12 +1,13 @@
-﻿using System.Globalization;
+﻿using MarcusRunge.Toolbox.Localization.Core;
+using System.Globalization;
 using System.Windows.Data;
 
-namespace MarcusRunge.Toolbox.Localization
+namespace MarcusRunge.Toolbox.Localization.Wpf
 {
     /// <summary>
     /// Converts enum values to their localized description if a DescriptionAttribute is present.
     /// </summary>
-    /// <seealso cref="System.Windows.Data.IValueConverter" />
+    /// <seealso cref="IValueConverter" />
     public sealed class EnumDescriptionValueConverter : IValueConverter
     {
         /// <summary>

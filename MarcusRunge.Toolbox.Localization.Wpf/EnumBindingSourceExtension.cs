@@ -1,6 +1,6 @@
 ﻿using System.Windows.Markup;
 
-namespace MarcusRunge.Toolbox.Localization
+namespace MarcusRunge.Toolbox.Localization.Wpf
 {
     /// <summary>
     /// Provides enum values as an ItemsSource for WPF bindings.

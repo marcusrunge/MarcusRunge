@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel;
 using System.Resources;
 
-namespace MarcusRunge.Toolbox.Localization
+namespace MarcusRunge.Toolbox.Localization.Core
 {
     /// <summary>
     /// Provides a localized description for an enumeration value,
