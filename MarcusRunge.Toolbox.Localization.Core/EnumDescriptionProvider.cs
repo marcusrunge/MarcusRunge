@@ -18,10 +18,8 @@ namespace MarcusRunge.Toolbox.Localization.Core
         /// </returns>
         public static string GetDescription(Enum value)
         {
-
             if (value is null)
                 throw new ArgumentNullException(nameof(value));
-
 
             var enumType = value.GetType();
             var name = Enum.GetName(enumType, value);
