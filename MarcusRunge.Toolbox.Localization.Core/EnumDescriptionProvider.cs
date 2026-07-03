@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel;
 using System.Reflection;
 
-namespace MarcusRunge.Toolbox.Localization
+namespace MarcusRunge.Toolbox.Localization.Core
 {
     /// <summary>
     /// Provides localized descriptions for enum values based on the DescriptionAttribute.
@@ -18,7 +18,10 @@ namespace MarcusRunge.Toolbox.Localization
         /// </returns>
         public static string GetDescription(Enum value)
         {
-            ArgumentNullException.ThrowIfNull(value);
+
+            if (value is null)
+                throw new ArgumentNullException(nameof(value));
+
 
             var enumType = value.GetType();
             var name = Enum.GetName(enumType, value);
