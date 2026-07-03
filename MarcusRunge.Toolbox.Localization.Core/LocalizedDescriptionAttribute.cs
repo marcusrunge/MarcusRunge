@@ -25,7 +25,8 @@ namespace MarcusRunge.Toolbox.Localization.Core
             if (string.IsNullOrWhiteSpace(resourceKey))
                 throw new ArgumentException("Resource key must not be null or whitespace.", nameof(resourceKey));
 
-            ArgumentNullException.ThrowIfNull(resourceType);
+            if (resourceType is null)
+                throw new ArgumentNullException(nameof(resourceType));
 
             _resourceKey = resourceKey;
             _resourceManager = new ResourceManager(resourceType);
