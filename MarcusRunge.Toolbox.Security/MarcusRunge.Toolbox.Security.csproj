@@ -5,4 +5,8 @@
 	<PackageId>MarcusRunge.Toolbox.Security</PackageId>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Remove="C:\Users\mru\source\repos\MarcusRunge\README.md" />
+  </ItemGroup>
+
 </Project>

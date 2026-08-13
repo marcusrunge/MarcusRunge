@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="C:\Users\mru\source\repos\MarcusRunge\README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\MarcusRunge.Toolbox.Localization.Core\MarcusRunge.Toolbox.Localization.Core.csproj" />
   </ItemGroup>
 

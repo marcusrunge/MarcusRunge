@@ -5,4 +5,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Remove="C:\Users\mru\source\repos\MarcusRunge\README.md" />
+  </ItemGroup>
+
 </Project>
