@@ -9,4 +9,8 @@
     <None Remove="C:\Users\mru\source\repos\MarcusRunge\README.md" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Update="MinVer" Version="8.0.0" />
+  </ItemGroup>
+
 </Project>
