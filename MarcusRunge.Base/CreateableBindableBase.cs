@@ -1,50 +1,44 @@
-﻿using System;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Threading.Tasks.Sources;
-using System.Runtime.CompilerServices;
-using System.Collections.Generic;
+﻿using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 
 namespace MarcusRunge.Base
 {
     /// <summary>
-    /// Public base type that provides thread-safe creation and one-time async initialization for a singleton-like instance.
+    /// Provides thread-safe synchronous construction and one-time asynchronous initialization
+    /// with global, scoped, and transient lifetime support.
     /// </summary>
-    /// <typeparam name="TInterface">The interface that the class implements.</typeparam>
+    /// <typeparam name="TInterface">The interface implemented by the concrete class.</typeparam>
     /// <typeparam name="TClass">The concrete class that inherits from this base class.</typeparam>
-    /// <typeparam name="TBase">The base class for the concrete class.</typeparam>
-    public abstract class CreateableBindableBase<TInterface, TClass, TBase> : BindableBase, ICreateableAware
-        where TClass : CreateableBindableBase<TInterface, TClass, TBase>, TInterface, new()
+    /// <typeparam name="TBase">The context used for synchronous and asynchronous initialization.</typeparam>
+    public abstract class CreateableBindableBase<TInterface, TClass, TBase> : BindableBase, ICreateableAware where TClass : CreateableBindableBase<TInterface, TClass, TBase>, TInterface, new()
     {
-        // Global synchronization for singleton creation and starting the async initialization exactly once.
-        private static readonly object _sync = new();
+        private static readonly object _globalStateSynchronization = new();
+        private static readonly ConditionalWeakTable<object, CreationState> _scopedStates = new();
 
-        private static Exception? _initializationException;
-        private static Task? _initTask;
-        private static TClass? _instance;
+        private static CreationState _globalState = new();
 
-        // Instance-level synchronization for event handler registration and draining (invocation after "created" flips).
-        private readonly object _createdLock = new();
+        private readonly object _createdHandlersSynchronization = new();
 
         private EventHandler? _createdHandlers;
+        private CreationState? _creationState;
 
-        // 0 = not created; 1 = created (written via Interlocked, read via Volatile).
-        private static int _isCreated;
-
-        ///<inheritdoc />
+        /// <inheritdoc/>
         public event EventHandler? OnCreated
         {
             add
             {
-                if (value is null) return;
+                if (value is null)
+                    return;
+
                 if (IsCreated)
                 {
-                    value(this, EventArgs.Empty);
+                    InvokeCreatedHandler(value);
                     return;
                 }
 
-                lock (_createdLock)
+                lock (_createdHandlersSynchronization)
                 {
                     if (!IsCreated)
                     {
@@ -53,179 +47,409 @@ namespace MarcusRunge.Base
                     }
                 }
 
-                value(this, EventArgs.Empty);
+                InvokeCreatedHandler(value);
             }
             remove
             {
-                if (value is null) return;
-                lock (_createdLock)
+                if (value is null)
+                    return;
+
+                lock (_createdHandlersSynchronization)
                 {
                     _createdHandlers -= value;
                 }
             }
         }
 
-        /// <summary>
-        /// The task representing asynchronous initialization, if it has been started.
-        /// </summary>
-        public Task? Initialization => Volatile.Read(ref _initTask);
-
-        /// <summary>
-        /// The exception captured when initialization failed (if any).
-        /// </summary>
-        public Exception? InitializationException => Volatile.Read(ref _initializationException);
-
-        /// <summary>
-        /// True if the instance has transitioned to the created/completed state.
-        /// </summary>
-        public bool IsCreated => Volatile.Read(ref _isCreated) == 1;
-
-        /// <summary>
-        /// True if initialization has been started but not yet completed.
-        /// </summary>
-        public bool IsInitializing => Volatile.Read(ref _initTask) != null && !Volatile.Read(ref _initTask)!.IsCompleted;
-
-        /// <summary>
-        /// Factory method to create the singleton instance and start async initialization. The instance is created synchronously on the first call, and async initialization is triggered once and only once. Subsequent calls return the already created instance. The provided base parameter is passed to both the synchronous and asynchronous creation hooks for flexible setup.
-        /// </summary>
-        /// <param name="base">Initialization parameter</param>
-        /// <returns>The created instance as TInterface.</returns>
-        public static TInterface Create(TBase @base)
+        /// <inheritdoc/>
+        public Task? Initialization
         {
-            EnsureCreated(@base);
-            EnsureAsyncInitStarted(@base, CancellationToken.None);
-            return _instance!;
-        }
-
-        /// <summary>
-        /// Async factory that ensures creation and waits for asynchronous initialization to complete. The CancellationToken only affects waiting; the initialization task itself is controlled by the first caller that starts it.
-        /// </summary>
-        /// <param name="base">Initialization parameter</param>
-        /// <param name="cancellationToken">Cancellation token for the caller waiting on completion.</param>
-        /// <returns>The created instance as TInterface.</returns>
-        public static async Task<TInterface> CreateAsync(TBase @base, CancellationToken cancellationToken = default)
-        {
-            EnsureCreated(@base);
-            EnsureAsyncInitStarted(@base, cancellationToken);
-
-            // Wait for the initialization task to complete. We rethrow any exceptions that fault the initialization.
-            var task = Volatile.Read(ref _initTask);
-            if (task is null)
-                return _instance!; // nothing to wait for
-
-            await WaitWithCancellation(task, cancellationToken).ConfigureAwait(false);
-
-            // Propagate stored exception if present (await would already rethrow), return instance.
-            return _instance!;
-        }
-
-        /// <summary>
-        /// Initialization hook for synchronous setup during instance creation. This runs exactly once on the first call to Create before the instance is published.
-        /// </summary>
-        /// <param name="base">The base parameter for initialization.</param>
-        protected abstract void OnCreate(TBase @base);
-
-        /// <summary>
-        /// Initialization hook for asynchronous setup during instance creation. This runs exactly once on the first call to Create before the instance is transitioned to created.
-        /// </summary>
-        /// <param name="base">The base parameter for initialization.</param>
-        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-        /// <returns>A task representing the asynchronous operation.</returns>
-        protected abstract Task OnCreateAsync(TBase @base, CancellationToken cancellationToken);
-
-        private static void EnsureAsyncInitStarted(TBase @base, CancellationToken cancellationToken)
-        {
-            if (Volatile.Read(ref _initTask) != null) return;
-
-            lock (_sync)
+            get
             {
-                if (_initTask != null) return;
-                if (_instance is null) throw new InvalidOperationException("Instance not created.");
-
-                // Start initialization using the provided token. Only the first caller's token is used by the initialization task.
-                _initTask = _instance.InitializeAsync(@base, cancellationToken);
+                var state = GetCreationState();
+                return state is null ? null : Volatile.Read(ref state.Initialization);
             }
         }
 
-        private static void EnsureCreated(TBase @base)
-        {
-            if (_instance != null) return;
+        /// <inheritdoc/>
+        Task? ICreateableAware.Initialization => Initialization;
 
-            lock (_sync)
+        /// <inheritdoc/>
+        public Exception? InitializationException
+        {
+            get
             {
-                if (_instance != null) return;
-                var inst = new TClass();
-                inst.OnCreate(@base);
-                _instance = inst;
+                var state = GetCreationState();
+                return state is null ? null : Volatile.Read(ref state.InitializationException);
             }
         }
 
-        private async Task InitializeAsync(TBase @base, CancellationToken cancellationToken)
+        /// <inheritdoc/>
+        Exception? ICreateableAware.InitializationException => InitializationException;
+
+        /// <inheritdoc/>
+        public bool IsCreated
+        {
+            get
+            {
+                var state = GetCreationState();
+                return state is not null && Volatile.Read(ref state.IsCreated) == 1;
+            }
+        }
+
+        /// <inheritdoc/>
+        bool ICreateableAware.IsCreated => IsCreated;
+
+        /// <inheritdoc/>
+        public bool IsInitializing
+        {
+            get
+            {
+                var initialization = Initialization;
+                return initialization is { IsCompleted: false };
+            }
+        }
+
+        /// <inheritdoc/>
+        bool ICreateableAware.IsInitializing => IsInitializing;
+
+        /// <summary>
+        /// Creates or returns the global instance and starts its asynchronous initialization.
+        /// </summary>
+        /// <param name="context">The initialization context.</param>
+        /// <returns>The global instance.</returns>
+        /// <remarks>
+        /// This overload preserves the original global lifetime behavior.
+        /// The method returns after synchronous initialization and does not wait for asynchronous initialization.
+        /// </remarks>
+        public static TInterface Create(TBase context) => Create(context, CreationLifetime.Global);
+
+        /// <summary>
+        /// Creates or returns an instance using the requested lifetime and starts its asynchronous initialization.
+        /// </summary>
+        /// <param name="context">The initialization context.</param>
+        /// <param name="lifetime">The requested creation lifetime.</param>
+        /// <returns>The created instance.</returns>
+        /// <remarks>
+        /// For <see cref="CreationLifetime.Scoped"/>, the reference identity of
+        /// <paramref name="context"/> identifies the scope.
+        /// </remarks>
+        public static TInterface Create(TBase context, CreationLifetime lifetime) => CreateInstance(context, lifetime);
+
+        /// <summary>
+        /// Creates or returns the global instance and waits for asynchronous initialization.
+        /// </summary>
+        /// <param name="context">The initialization context.</param>
+        /// <param name="cancellationToken">
+        /// A token that cancels only this caller's wait. It does not cancel shared initialization.
+        /// </param>
+        /// <returns>The fully initialized global instance.</returns>
+        public static Task<TInterface> CreateAsync(TBase context, CancellationToken cancellationToken = default) => CreateAsync(context, CreationLifetime.Global, cancellationToken);
+
+        /// <summary>
+        /// Creates or returns an instance using the requested lifetime and waits for asynchronous initialization.
+        /// </summary>
+        /// <param name="context">The initialization context.</param>
+        /// <param name="lifetime">The requested creation lifetime.</param>
+        /// <param name="cancellationToken">
+        /// A token that cancels only this caller's wait. It does not cancel shared initialization.
+        /// </param>
+        /// <returns>The fully initialized instance.</returns>
+        /// <remarks>
+        /// Shared initialization always receives <see cref="CancellationToken.None"/>.
+        /// Application lifetime cancellation must be supplied through the initialization context.
+        /// </remarks>
+        public static async Task<TInterface> CreateAsync(TBase context, CreationLifetime lifetime, CancellationToken cancellationToken = default)
+        {
+            var instance = CreateInstance(context, lifetime);
+
+            if (instance.Initialization is { } initialization)
+                await WaitWithCancellationAsync(initialization, cancellationToken).ConfigureAwait(false);
+
+            return instance;
+        }
+
+        /// <summary>
+        /// Resets the global creation state for unit tests.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">
+        /// The global state is currently being synchronously or asynchronously initialized.
+        /// </exception>
+        internal static void ResetGlobalStateForTests()
+        {
+            lock (_globalStateSynchronization)
+            {
+                var state = _globalState;
+
+                lock (state.Synchronization)
+                {
+                    var synchronousCreationIsRunning = state.CreationStarted && !state.CreationCompletion.Task.IsCompleted;
+                    var asynchronousInitializationIsRunning = state.Initialization is { IsCompleted: false };
+
+                    if (synchronousCreationIsRunning || asynchronousInitializationIsRunning)
+                        throw new InvalidOperationException($"The global creation state for '{typeof(TClass).FullName}' cannot be reset while initialization is running.");
+
+                    _globalState = new CreationState();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Performs synchronous initialization before the instance is published.
+        /// </summary>
+        /// <param name="context">The initialization context.</param>
+        /// <remarks>
+        /// Implementations must establish every invariant required for safely exposing the instance.
+        /// A failure permanently faults the affected creation state.
+        /// </remarks>
+        protected abstract void OnCreate(TBase context);
+
+        /// <summary>
+        /// Performs one-time asynchronous initialization.
+        /// </summary>
+        /// <param name="context">The initialization context.</param>
+        /// <param name="cancellationToken">
+        /// The initialization token. The base implementation supplies
+        /// <see cref="CancellationToken.None"/> so caller wait cancellation cannot cancel shared initialization.
+        /// </param>
+        /// <returns>A task representing asynchronous initialization.</returns>
+        protected abstract Task OnCreateAsync(TBase context, CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Handles an exception thrown by an <see cref="OnCreated"/> subscriber.
+        /// </summary>
+        /// <param name="exception">The subscriber exception.</param>
+        /// <remarks>
+        /// Subscriber failures do not fail completed initialization and do not prevent other subscribers
+        /// from being invoked. Derived classes may override this method to integrate diagnostic reporting.
+        /// Exceptions thrown by this method are isolated as well.
+        /// </remarks>
+        protected virtual void OnCreatedSubscriberException(Exception exception) => Debug.WriteLine($"An OnCreated subscriber threw an exception: {exception}");
+
+        private static bool ContextsAreIdentical(TBase first, TBase second) => typeof(TBase).IsValueType ? EqualityComparer<TBase>.Default.Equals(first, second) : ReferenceEquals(first, second);
+
+        private static TClass CreateCore(CreationState state, TBase context)
+        {
+            var startsCreation = false;
+
+            lock (state.Synchronization)
+            {
+                ValidateContext(state, context);
+
+                if (state.CreationException is { } creationException)
+                    ExceptionDispatchInfo.Capture(creationException).Throw();
+
+                if (!state.CreationStarted)
+                {
+                    state.CreationStarted = true;
+                    startsCreation = true;
+                }
+            }
+
+            if (startsCreation)
+                StartCreation(state, context);
+
+            return state.CreationCompletion.Task.GetAwaiter().GetResult();
+        }
+
+        private static TClass CreateInstance(TBase context, CreationLifetime lifetime)
+        {
+            var state = GetState(context, lifetime);
+            return CreateCore(state, context);
+        }
+
+        private static CreationState CreateScopedState(object _) => new();
+
+        private static CreationState GetGlobalState()
+        {
+            lock (_globalStateSynchronization)
+            {
+                return _globalState;
+            }
+        }
+
+        private static CreationState GetScopedState(TBase context)
+        {
+            if (typeof(TBase).IsValueType)
+                throw new InvalidOperationException($"The scoped lifetime requires the initialization context type '{typeof(TBase).FullName}' to be a reference type.");
+
+            if (context is not object scope)
+                throw new ArgumentNullException(nameof(context), "The scoped lifetime requires a non-null initialization context.");
+
+            return _scopedStates.GetValue(scope, CreateScopedState);
+        }
+
+        private static CreationState GetState(TBase context, CreationLifetime lifetime) => lifetime switch
+        {
+            CreationLifetime.Global => GetGlobalState(),
+            CreationLifetime.Scoped => GetScopedState(context),
+            CreationLifetime.Transient => new CreationState(),
+            _ => throw new InvalidEnumArgumentException(nameof(lifetime), (int)lifetime, typeof(CreationLifetime))
+        };
+
+        private static void StartCreation(CreationState state, TBase context)
         {
             try
             {
-                await OnCreateAsync(@base, cancellationToken).ConfigureAwait(false);
+                // User-defined hooks run outside internal locks to prevent lock inversion and reentrancy deadlocks.
+                var instance = new TClass();
+                instance.AttachCreationState(state);
+                instance.OnCreate(context);
 
-                if (Interlocked.Exchange(ref _isCreated, 1) == 0)
+                // The initialization task is assigned before the instance is published to waiting callers.
+                var initialization = instance.InitializeAsync(context);
+
+                lock (state.Synchronization)
                 {
-                    EventHandler? handlers;
-                    lock (_createdLock)
-                    {
-                        handlers = _createdHandlers;
-                        _createdHandlers = null;
-                    }
-                    handlers?.Invoke(this, EventArgs.Empty);
+                    state.Initialization = initialization;
                 }
+
+                state.CreationCompletion.TrySetResult(instance);
             }
-            catch (Exception ex)
+            catch (Exception exception)
             {
-                Volatile.Write(ref _initializationException, ex);
-                throw;
+                lock (state.Synchronization)
+                {
+                    state.CreationException = exception;
+                    state.InitializationException = exception;
+                }
+
+                state.CreationCompletion.TrySetException(exception);
             }
         }
 
-        /// <summary>
-        /// Helper to await a task while honoring a caller cancellation token on platforms where Task.WaitAsync may not be available.
-        /// </summary>
-        private static async Task WaitWithCancellation(Task task, CancellationToken cancellationToken)
+        private static void ValidateContext(CreationState state, TBase context)
         {
+            if (!state.HasInitializationContext)
+            {
+                state.InitializationContext = context;
+                state.HasInitializationContext = true;
+                return;
+            }
+
+            if (ContextsAreIdentical(state.InitializationContext, context))
+                return;
+
+            throw new InvalidOperationException($"The creation state for '{typeof(TClass).FullName}' was already initialized with a different context. Use '{CreationLifetime.Scoped}' with a stable context instance or '{CreationLifetime.Transient}' for an independent object graph.");
+        }
+
+        private static async Task WaitWithCancellationAsync(Task task, CancellationToken cancellationToken)
+        {
+            if (task.IsCompleted)
+            {
+                await task.ConfigureAwait(false);
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (!cancellationToken.CanBeCanceled)
             {
                 await task.ConfigureAwait(false);
                 return;
             }
 
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            var tcs = new TaskCompletionSource<object?>();
-            using (cancellationToken.Register(state => ((TaskCompletionSource<object?>)state!).TrySetCanceled(), tcs))
+            var cancellationCompletion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            using (cancellationToken.Register(static state => ((TaskCompletionSource<object?>)state!).TrySetResult(null), cancellationCompletion))
             {
-                var completed = await Task.WhenAny(task, tcs.Task).ConfigureAwait(false);
-                if (completed == tcs.Task)
+                var completedTask = await Task.WhenAny(task, cancellationCompletion.Task).ConfigureAwait(false);
+
+                // Initialization takes precedence when completion and cancellation become observable together.
+                if (task.IsCompleted)
+                {
+                    await task.ConfigureAwait(false);
+                    return;
+                }
+
+                if (completedTask == cancellationCompletion.Task)
                     throw new OperationCanceledException(cancellationToken);
-                await task.ConfigureAwait(false); // propagate exceptions if any
+
+                await task.ConfigureAwait(false);
             }
         }
 
-        /// <summary>
-        /// Resets the static singleton and initialization state. Intended for unit tests only.</summary>
-        internal static void ResetForTests()
+        private void AttachCreationState(CreationState state)
         {
-            lock (_sync)
+            if (Interlocked.CompareExchange(ref _creationState, state, null) is not null)
+                throw new InvalidOperationException("The instance is already attached to a creation state.");
+        }
+
+        private CreationState? GetCreationState() => Volatile.Read(ref _creationState);
+
+        private CreationState GetRequiredCreationState() => GetCreationState() ?? throw new InvalidOperationException("The instance is not attached to a creation state.");
+
+        private async Task InitializeAsync(TBase context)
+        {
+            var state = GetRequiredCreationState();
+
+            try
             {
-                _instance = null;
-                _initTask = null;
-                _initializationException = null;
-                Volatile.Write(ref _isCreated, 0);
+                await OnCreateAsync(context, CancellationToken.None).ConfigureAwait(false);
+                Volatile.Write(ref state.IsCreated, 1);
+            }
+            catch (Exception exception)
+            {
+                Volatile.Write(ref state.InitializationException, exception);
+                throw;
+            }
+
+            RaiseCreated();
+        }
+
+        private void InvokeCreatedHandler(EventHandler handler)
+        {
+            try
+            {
+                handler(this, EventArgs.Empty);
+            }
+            catch (Exception exception)
+            {
+                TryReportCreatedSubscriberException(exception);
             }
         }
 
-        // Explicit interface implementations to satisfy ICreateableAware (instance view of the singleton state).
-        Task? ICreateableAware.Initialization => Initialization;
+        private void RaiseCreated()
+        {
+            EventHandler? handlers;
 
-        Exception? ICreateableAware.InitializationException => InitializationException;
+            lock (_createdHandlersSynchronization)
+            {
+                handlers = _createdHandlers;
+                _createdHandlers = null;
+            }
 
-        bool ICreateableAware.IsCreated => IsCreated;
+            if (handlers is null)
+                return;
 
-        bool ICreateableAware.IsInitializing => IsInitializing;
+            foreach (var subscriber in handlers.GetInvocationList())
+                InvokeCreatedHandler((EventHandler)subscriber);
+        }
+
+        private void TryReportCreatedSubscriberException(Exception exception)
+        {
+            try
+            {
+                OnCreatedSubscriberException(exception);
+            }
+            catch (Exception diagnosticException)
+            {
+                Debug.WriteLine($"Reporting an OnCreated subscriber exception failed: {diagnosticException}");
+            }
+        }
+
+        private sealed class CreationState
+        {
+            internal readonly TaskCompletionSource<TClass> CreationCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            internal readonly object Synchronization = new();
+
+            internal Exception? CreationException;
+            internal bool CreationStarted;
+            internal bool HasInitializationContext;
+            internal Task? Initialization;
+            internal TBase InitializationContext = default!;
+            internal Exception? InitializationException;
+            internal int IsCreated;
+        }
     }
 }
