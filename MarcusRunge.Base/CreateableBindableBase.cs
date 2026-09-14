@@ -17,6 +17,9 @@ namespace MarcusRunge.Base
         private static readonly object _globalStateSynchronization = new();
         private static readonly ConditionalWeakTable<object, CreationState> _scopedStates = new();
 
+        [ThreadStatic]
+        private static CreationState? _currentCreationState;
+
         private static CreationState _globalState = new();
 
         private readonly object _createdHandlersSynchronization = new();
@@ -248,6 +251,8 @@ namespace MarcusRunge.Base
 
             if (startsCreation)
                 StartCreation(state, context);
+            else
+                ThrowIfCreationIsReentrant(state);
 
             return state.CreationCompletion.Task.GetAwaiter().GetResult();
         }
@@ -289,6 +294,9 @@ namespace MarcusRunge.Base
 
         private static void StartCreation(CreationState state, TBase context)
         {
+            var previousCreationState = _currentCreationState;
+            _currentCreationState = state;
+
             try
             {
                 // User-defined hooks run outside internal locks to prevent lock inversion and reentrancy deadlocks.
@@ -316,6 +324,16 @@ namespace MarcusRunge.Base
 
                 state.CreationCompletion.TrySetException(exception);
             }
+            finally
+            {
+                _currentCreationState = previousCreationState;
+            }
+        }
+
+        private static void ThrowIfCreationIsReentrant(CreationState state)
+        {
+            if (ReferenceEquals(_currentCreationState, state))
+                throw new InvalidOperationException($"Recursive creation of '{typeof(TClass).FullName}' for the same creation state is not supported.");
         }
 
         private static void ValidateContext(CreationState state, TBase context)
