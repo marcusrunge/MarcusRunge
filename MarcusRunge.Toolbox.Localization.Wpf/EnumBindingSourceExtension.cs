@@ -3,43 +3,43 @@
 namespace MarcusRunge.Toolbox.Localization.Wpf
 {
     /// <summary>
-    /// Provides enum values as an ItemsSource for WPF bindings.
+    /// Provides the declared values of an enumeration as an items source for WPF bindings.
     /// </summary>
     public sealed class EnumBindingSourceExtension : MarkupExtension
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="EnumBindingSourceExtension"/> class.
         /// </summary>
-        /// <param name="enumType">Type of the enum.</param>
-        /// <exception cref="ArgumentNullException"></exception>
-        /// <exception cref="ArgumentException">Type must be an enum type. - enumType</exception>
+        /// <param name="enumType">
+        /// The enumeration type. Nullable enumeration types are accepted and resolved to their
+        /// underlying enumeration type.
+        /// </param>
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="enumType"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="enumType"/> is not an enumeration type.
+        /// </exception>
         public EnumBindingSourceExtension(Type enumType)
         {
             ArgumentNullException.ThrowIfNull(enumType);
-
             var actualEnumType = Nullable.GetUnderlyingType(enumType) ?? enumType;
-
-            if (!actualEnumType.IsEnum)
-                throw new ArgumentException("Type must be an enum type.", nameof(enumType));
-
+            if (!actualEnumType.IsEnum) throw new ArgumentException("The supplied type must be an enumeration type.", nameof(enumType));
             EnumType = actualEnumType;
         }
 
         /// <summary>
-        /// Gets the type of the enum.
+        /// Gets the non-nullable enumeration type whose declared values are returned.
         /// </summary>
-        /// <value>
-        /// The type of the enum.
-        /// </value>
         public Type EnumType { get; }
 
         /// <summary>
-        /// When implemented in a derived class, returns an object that is provided as the value of the target property for this markup extension.
+        /// Returns the declared values of <see cref="EnumType"/>.
         /// </summary>
-        /// <param name="serviceProvider">A service provider helper that can provide services for the markup extension.</param>
-        /// <returns>
-        /// The object value to set on the property where the extension is applied.
-        /// </returns>
+        /// <param name="serviceProvider">
+        /// A service provider that can provide services for the markup extension.
+        /// </param>
+        /// <returns>An array containing the declared enumeration values.</returns>
         public override object ProvideValue(IServiceProvider serviceProvider) => Enum.GetValues(EnumType);
     }
 }

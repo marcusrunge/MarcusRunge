@@ -15,18 +15,18 @@ namespace MarcusRunge.Base
         /// Uses one process-wide instance for each closed generic creation type.
         /// </summary>
         [LocalizedDescription("CreationLifetimeGlobal", typeof(Resources))]
-        Global,
+        Global = 0,
 
         /// <summary>
         /// Uses one instance for each initialization context reference.
         /// </summary>
         [LocalizedDescription("CreationLifetimeScoped", typeof(Resources))]
-        Scoped,
+        Scoped = 1,
 
         /// <summary>
-        /// Creates an independent instance for every call.
+        /// Creates an independent instance for every creation call.
         /// </summary>
         [LocalizedDescription("CreationLifetimeTransient", typeof(Resources))]
-        Transient
+        Transient = 2
     }
 }

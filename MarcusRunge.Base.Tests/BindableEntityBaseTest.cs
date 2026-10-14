@@ -6,48 +6,49 @@
     public class BindableEntityBaseTest
     {
         /// <summary>
-        /// Constructors the with identifier sets identifier.
+        /// Verifies that the constructor assigns the specified database identity.
         /// </summary>
         [Fact]
         public void Constructor_WithId_SetsId()
         {
-            // Act
-            var systemUnderTest = new TestEntity(42);
+            // Arrange / Act
+            var systemUnderTest = new TestBindableEntityBase(42);
 
             // Assert
             Assert.Equal(42, systemUnderTest.Id);
         }
 
         /// <summary>
-        /// Identifiers the uses set property from base class.
+        /// Verifies that changing the database identity raises a property change notification
+        /// through the inherited SetProperty implementation.
         /// </summary>
         [Fact]
         public void Id_UsesSetProperty_FromBaseClass()
         {
-            // This test ensures that the Id property is wired to SetProperty,
-            // but does NOT re-test SetProperty behavior itself.
-
             // Arrange
-            var systemUnderTest = new TestEntity();
-            string? raisedProperty = null;
-            systemUnderTest.PropertyChanged += (_, e) => raisedProperty = e.PropertyName;
+            var systemUnderTest = new TestBindableEntityBase();
+            string? raisedPropertyName = null;
+
+            systemUnderTest.PropertyChanged += (_, args) => raisedPropertyName = args.PropertyName;
 
             // Act
-            systemUnderTest.Id = 7;
+            systemUnderTest.Id = 42;
 
             // Assert
-            Assert.Equal(nameof(TestEntity.Id), raisedProperty);
+            Assert.Equal(42, systemUnderTest.Id);
+            Assert.Equal(nameof(BindableEntityBase.Id), raisedPropertyName);
         }
 
         /// <summary>
-        /// Rows the version does not raise property changed.
+        /// Verifies that changing the database concurrency token does not raise a property change notification.
         /// </summary>
         [Fact]
         public void RowVersion_DoesNotRaisePropertyChanged()
         {
             // Arrange
-            var systemUnderTest = new TestEntity();
+            var systemUnderTest = new TestBindableEntityBase();
             var raised = false;
+
             systemUnderTest.PropertyChanged += (_, _) => raised = true;
 
             // Act
@@ -55,12 +56,35 @@
 
             // Assert
             Assert.False(raised);
+            Assert.Equal(new byte[] { 1, 2, 3 }, systemUnderTest.RowVersion);
         }
 
-        private sealed class TestEntity : BindableEntityBase
+        /// <summary>
+        /// Provides a concrete bindable entity for testing.
+        /// </summary>
+        private sealed class TestBindableEntityBase : BindableEntityBase
         {
-            public TestEntity() { }
-            public TestEntity(int id) : base(id) { }
+            /// <summary>
+            /// Initializes a new instance of the <see cref="TestBindableEntityBase"/> class.
+            /// </summary>
+            public TestBindableEntityBase()
+            {
+                // Synchronization-context dispatch is tested separately by BindableBaseTest.
+                // These tests verify only the BindableEntityBase property contracts.
+                NotificationContext = null;
+            }
+
+            /// <summary>
+            /// Initializes a new instance of the <see cref="TestBindableEntityBase"/> class
+            /// with the specified database identity.
+            /// </summary>
+            /// <param name="id">The database identity.</param>
+            public TestBindableEntityBase(int id) : base(id)
+            {
+                // Synchronization-context dispatch is tested separately by BindableBaseTest.
+                // These tests verify only the BindableEntityBase property contracts.
+                NotificationContext = null;
+            }
         }
     }
 }

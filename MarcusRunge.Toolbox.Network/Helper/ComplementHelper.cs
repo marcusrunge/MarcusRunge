@@ -24,14 +24,9 @@ namespace MarcusRunge.Toolbox.Network.Helper
             BigInteger addressSpaceStart = BigInteger.Zero;
             BigInteger addressSpaceEnd = (BigInteger.One << maxBits) - BigInteger.One;
             // Convert excluded networks to address ranges, filter by address family, and sort them.
-            List<AddressRange> excludedRanges = [.. excludedNetworks
-                .Where(network => network.BaseAddress.AddressFamily == addressFamily)
-                .Select(ToRange)
-                .OrderBy(range => range.Start)
-                .ThenBy(range => range.End)];
+            List<AddressRange> excludedRanges = [.. excludedNetworks.Where(network => network.BaseAddress.AddressFamily == addressFamily).Select(ToRange).OrderBy(range => range.Start).ThenBy(range => range.End)];
             // Merge overlapping or adjacent excluded ranges to simplify the complement calculation.
             List<AddressRange> mergedExcludedRanges = MergeRanges(excludedRanges);
-
             // Calculate the complement by finding the gaps between the merged excluded ranges.
             List<IPNetwork> result = [];
             // Start with the beginning of the address space and find the first gap until the first excluded range.
@@ -47,11 +42,7 @@ namespace MarcusRunge.Toolbox.Network.Helper
                 // If the excluded range starts after the cursor, it means there is a gap between the cursor and the start of the excluded range, so we need to add that gap to the result.
                 if (excluded.Start > cursor)
                 {
-                    AddCidrsForRange(
-                        result,
-                        cursor,
-                        excluded.Start - BigInteger.One,
-                        addressFamily);
+                    AddCidrsForRange(result, cursor, excluded.Start - BigInteger.One, addressFamily);
                 }
                 // Move the cursor to the end of the excluded range, plus one, to start looking for the next gap.
                 cursor = BigInteger.Max(cursor, excluded.End + BigInteger.One);
@@ -64,13 +55,8 @@ namespace MarcusRunge.Toolbox.Network.Helper
             // After processing all excluded ranges, if the cursor is still within the address space, it means there is a final gap from the cursor to the end of the address space that we need to add to the result.
             if (cursor <= addressSpaceEnd)
             {
-                AddCidrsForRange(
-                    result,
-                    cursor,
-                    addressSpaceEnd,
-                    addressFamily);
+                AddCidrsForRange(result, cursor, addressSpaceEnd, addressFamily);
             }
-
             return result;
         }
 
@@ -85,13 +71,9 @@ namespace MarcusRunge.Toolbox.Network.Helper
                 // Calculate the number of remaining addresses in the range from start to end.
                 BigInteger remainingAddresses = end - start + BigInteger.One;
                 // Calculate the number of bits we can use for the CIDR block based on the alignment of the start address and the number of remaining addresses. The alignment block bits are determined by counting the number of trailing zero bits in the start address, which indicates how large of a block we can create that is aligned with the start address. The remaining block bits are determined by calculating the floor of the log base 2 of the remaining addresses, which indicates how large of a block we can create based on how many addresses are left to cover. We take the minimum of these two values to ensure that we create a valid CIDR block that fits within both constraints.
-                int alignmentBlockBits = start.IsZero
-                    ? maxBits
-                    : Math.Min(CountTrailingZeroBits(start), maxBits);
+                int alignmentBlockBits = start.IsZero ? maxBits : Math.Min(CountTrailingZeroBits(start), maxBits);
                 // The number of bits for the CIDR block is the minimum of the alignment block bits and the remaining block bits, which ensures that we create the largest possible CIDR block that is properly aligned and does not exceed the remaining address space.
-                int remainingBlockBits = Math.Min(
-                    FloorLog2(remainingAddresses),
-                    maxBits);
+                int remainingBlockBits = Math.Min(FloorLog2(remainingAddresses), maxBits);
                 // The prefix length for the CIDR block is calculated by subtracting the number of block bits from the maximum number of bits for the address family. This gives us the correct prefix length that corresponds to the size of the CIDR block we are creating.
                 int blockBits = Math.Min(alignmentBlockBits, remainingBlockBits);
                 int prefixLength = maxBits - blockBits;
@@ -114,9 +96,7 @@ namespace MarcusRunge.Toolbox.Network.Helper
                 return int.MaxValue;
             }
             // Get the byte representation of the BigInteger value, which will be in little-endian format (least significant byte first) and unsigned. This is important for correctly counting the trailing zero bits starting from the least significant bit.
-            byte[] bytes = value.ToByteArray(
-                isUnsigned: true,
-                isBigEndian: false);
+            byte[] bytes = value.ToByteArray(isUnsigned: true, isBigEndian: false);
             // Initialize a count variable to keep track of the number of trailing zero bits we have encountered as we iterate through the bytes of the BigInteger.
             int count = 0;
             // Iterate through the bytes of the BigInteger starting from the least significant byte, and count how many bits are zero until we encounter a non-zero bit. For each byte that is zero, we can add 8 to the count since it contributes 8 trailing zero bits. Once we encounter a non-zero byte, we need to check each bit in that byte to count any additional trailing zero bits before we reach the first set bit.
@@ -149,14 +129,10 @@ namespace MarcusRunge.Toolbox.Network.Helper
             // If the value is less than or equal to zero, it means that we cannot calculate a logarithm for it, and we should throw an exception to indicate that the input is invalid. Logarithms are only defined for positive numbers, so we need to ensure that the value is greater than zero before we proceed with the calculation.
             if (value <= BigInteger.Zero)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(value),
-                    "Value must be greater than zero.");
+                throw new ArgumentOutOfRangeException(nameof(value), "Value must be greater than zero.");
             }
             // Get the byte representation of the BigInteger value, which will be in big-endian format (most significant byte first) and unsigned. This is important for correctly finding the most significant set bit, which determines the floor of log base 2.
-            byte[] bytes = value.ToByteArray(
-                isUnsigned: true,
-                isBigEndian: true);
+            byte[] bytes = value.ToByteArray(isUnsigned: true, isBigEndian: true);
             // The most significant byte is the first byte in the big-endian representation, and it contains the highest order bits of the value. We need to check this byte to find the position of the most significant set bit, which will give us the floor of log base 2.
             byte mostSignificantByte = bytes[0];
             // The initial result is calculated based on the number of bytes in the BigInteger, since each byte contributes 8 bits. We start with (bytes.Length - 1) * 8 because we will check the most significant byte separately to find the exact position of the highest set bit.
@@ -183,9 +159,7 @@ namespace MarcusRunge.Toolbox.Network.Helper
             {
                 AddressFamily.InterNetwork => 32,
                 AddressFamily.InterNetworkV6 => 128,
-                _ => throw new ArgumentException(
-                    "Only IPv4 and IPv6 are supported.",
-                    nameof(addressFamily))
+                _ => throw new ArgumentException("Only IPv4 and IPv6 are supported.", nameof(addressFamily))
             };
         }
 
@@ -212,9 +186,7 @@ namespace MarcusRunge.Toolbox.Network.Helper
                 if (overlapsOrTouches)
                 {
                     // Update the last merged range with the new merged range.
-                    merged[^1] = new AddressRange(
-                        last.Start,
-                        BigInteger.Max(last.End, range.End));
+                    merged[^1] = new AddressRange(last.Start, BigInteger.Max(last.End, range.End));
                 }
                 // If they do not overlap or are adjacent, simply add the current range to the merged list as a new separate range.
                 else
@@ -234,10 +206,7 @@ namespace MarcusRunge.Toolbox.Network.Helper
             byte[] bytes = address.GetAddressBytes();
 
             // Convert the byte array to a BigInteger, specifying that it is unsigned and in big-endian format. This will give us a numeric representation of the IP address that we can use for calculations.
-            return new BigInteger(
-                bytes,
-                isUnsigned: true,
-                isBigEndian: true);
+            return new BigInteger(bytes, isUnsigned: true, isBigEndian: true);
         }
 
         // Converts a BigInteger back to an IPAddress, ensuring that it fits within the specified address family (IPv4 or IPv6) and is properly formatted as a byte array. This is used when we need to convert numeric addresses back to their standard IP address format for creating IPNetwork instances.
@@ -248,30 +217,19 @@ namespace MarcusRunge.Toolbox.Network.Helper
             {
                 AddressFamily.InterNetwork => 4,
                 AddressFamily.InterNetworkV6 => 16,
-                _ => throw new ArgumentException(
-                    "Only IPv4 and IPv6 are supported.",
-                    nameof(addressFamily))
+                _ => throw new ArgumentException("Only IPv4 and IPv6 are supported.", nameof(addressFamily))
             };
             // Get the byte representation of the BigInteger value, which will be in big-endian format (most significant byte first) and unsigned. This will give us the raw bytes that represent the numeric address.
-            byte[] source = value.ToByteArray(
-                isUnsigned: true,
-                isBigEndian: true);
+            byte[] source = value.ToByteArray(isUnsigned: true, isBigEndian: true);
             // If the byte array is larger than the expected byte count for the address family, it means that the numeric address does not fit within the specified address family, and we should throw an exception to indicate this error.
             if (source.Length > byteCount)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(value),
-                    "The numeric address does not fit into the requested address family.");
+                throw new ArgumentOutOfRangeException(nameof(value), "The numeric address does not fit into the requested address family.");
             }
             // Create a destination byte array of the correct length for the address family, and copy the source bytes into it, aligning them to the right (least significant bytes) and padding with zeros on the left if necessary. This ensures that we have a properly formatted byte array that can be converted to an IPAddress.
             byte[] destination = new byte[byteCount];
             // Copy the source bytes into the destination array, starting from the end of the destination array and moving backwards, to ensure that the least significant bytes of the numeric address are correctly placed in the byte array for the IP address.
-            Buffer.BlockCopy(
-                source,
-                0,
-                destination,
-                byteCount - source.Length,
-                source.Length);
+            Buffer.BlockCopy(source, 0, destination, byteCount - source.Length, source.Length);
             // Create and return a new IPAddress instance using the destination byte array, which now contains the correct bytes for the specified address family.
             return new IPAddress(destination);
         }
