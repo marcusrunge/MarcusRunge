@@ -72,12 +72,10 @@
             var instance = (AsynchronouslyFailingCreateable)AsynchronouslyFailingCreateable.Create(context);
             var initialization = Assert.IsType<Task>(instance.Initialization, exactMatch: false);
 
-            AsynchronouslyFailingCreateable.InitializationFailure.TrySetException(
-                new InvalidOperationException("Asynchronous initialization failed."));
+            AsynchronouslyFailingCreateable.InitializationFailure.TrySetException(new InvalidOperationException("Asynchronous initialization failed."));
 
             var firstException = await Assert.ThrowsAsync<InvalidOperationException>(() => initialization.WaitAsync(cancellationToken));
-            var secondException = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => AsynchronouslyFailingCreateable.CreateAsync(context, cancellationToken));
+            var secondException = await Assert.ThrowsAsync<InvalidOperationException>(() => AsynchronouslyFailingCreateable.CreateAsync(context, cancellationToken));
 
             Assert.Equal("Asynchronous initialization failed.", firstException.Message);
             Assert.Same(firstException, secondException);
@@ -169,9 +167,7 @@
             protected override void OnCreate(FailureContext context)
             {
                 Interlocked.Increment(ref SyncCreateCount);
-
-                if (context.ShouldFail)
-                    throw new InvalidOperationException("Scoped synchronous initialization failed.");
+                if (context.ShouldFail) throw new InvalidOperationException("Scoped synchronous initialization failed.");
             }
 
             protected override Task OnCreateAsync(FailureContext context, CancellationToken cancellationToken) => Task.CompletedTask;
@@ -268,7 +264,12 @@
             {
                 Interlocked.Increment(ref SyncCreateCount);
 
-                context.NestedInstance ??= Create(context, CreationLifetime.Transient);
+                // Mark the intended single nested creation before entering it. The nested transient
+                // instance receives an independent creation state but shares this test context.
+                if (context.NestedCreationStarted) return;
+
+                context.NestedCreationStarted = true;
+                context.NestedInstance = Create(context, CreationLifetime.Transient);
             }
 
             protected override Task OnCreateAsync(TransientNestedContext context, CancellationToken cancellationToken) => Task.CompletedTask;
@@ -288,6 +289,8 @@
 
         private sealed class TransientNestedContext
         {
+            public bool NestedCreationStarted { get; set; }
+
             public ITestCreateable? NestedInstance { get; set; }
         }
     }
