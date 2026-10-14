@@ -44,19 +44,26 @@
         }
 
         /// <summary>
-        /// Verifies that a synchronous exception while starting asynchronous initialization
-        /// faults the creation state exactly once.
+        /// Verifies that an exception thrown when asynchronous initialization begins is stored
+        /// in the initialization task and the affected creation state.
         /// </summary>
         [Fact]
-        public void SynchronousOnCreateAsyncFailure_IsStoredForCreationState()
+        public async Task SynchronousOnCreateAsyncFailure_IsStoredForCreationState()
         {
+            var cancellationToken = TestContext.Current.CancellationToken;
             var context = new object();
 
-            var firstException = Assert.Throws<InvalidOperationException>(() => SynchronouslyFailingAsyncCreateable.Create(context));
-            var secondException = Assert.Throws<InvalidOperationException>(() => SynchronouslyFailingAsyncCreateable.Create(context));
+            var instance = (SynchronouslyFailingAsyncCreateable)SynchronouslyFailingAsyncCreateable.Create(context);
+            var initialization = Assert.IsType<Task>(instance.Initialization, exactMatch: false);
+
+            var firstException = await Assert.ThrowsAsync<InvalidOperationException>(() => initialization.WaitAsync(cancellationToken));
+            var secondException = await Assert.ThrowsAsync<InvalidOperationException>(() => SynchronouslyFailingAsyncCreateable.CreateAsync(context, cancellationToken));
 
             Assert.Equal("Starting asynchronous initialization failed.", firstException.Message);
             Assert.Same(firstException, secondException);
+            Assert.Same(firstException, instance.InitializationException);
+            Assert.False(instance.IsCreated);
+            Assert.False(instance.IsInitializing);
             Assert.Equal(1, SynchronouslyFailingAsyncCreateable.AsyncCreateCount);
         }
 
@@ -101,17 +108,24 @@
         }
 
         /// <summary>
-        /// Verifies that recursive creation from the synchronous beginning of asynchronous initialization
-        /// fails immediately instead of waiting indefinitely for the same creation state.
+        /// Verifies that requesting the already published global instance from asynchronous initialization
+        /// returns the same instance without starting another creation.
         /// </summary>
         [Fact]
-        public void RecursiveCreateFromSynchronousOnCreateAsyncStart_IsRejected()
+        public async Task CreateFromOnCreateAsync_ReturnsPublishedInstance()
         {
+            var cancellationToken = TestContext.Current.CancellationToken;
             var context = new object();
 
-            var exception = Assert.Throws<InvalidOperationException>(() => RecursiveOnCreateAsyncCreateable.Create(context));
+            var instance = (RecursiveOnCreateAsyncCreateable)RecursiveOnCreateAsyncCreateable.Create(context);
+            var initialization = Assert.IsType<Task>(instance.Initialization, exactMatch: false);
 
-            Assert.Contains("Recursive creation", exception.Message, StringComparison.Ordinal);
+            await initialization.WaitAsync(cancellationToken);
+
+            Assert.Same(instance, RecursiveOnCreateAsyncCreateable.NestedInstance);
+            Assert.True(instance.IsCreated);
+            Assert.False(instance.IsInitializing);
+            Assert.Null(instance.InitializationException);
             Assert.Equal(1, RecursiveOnCreateAsyncCreateable.AsyncCreateCount);
         }
 
@@ -222,6 +236,8 @@
         {
             public static int AsyncCreateCount;
 
+            public static ITestCreateable? NestedInstance { get; private set; }
+
             protected override void OnCreate(object context)
             {
             }
@@ -229,7 +245,7 @@
             protected override Task OnCreateAsync(object context, CancellationToken cancellationToken)
             {
                 Interlocked.Increment(ref AsyncCreateCount);
-                _ = Create(context);
+                NestedInstance = Create(context);
                 return Task.CompletedTask;
             }
         }
