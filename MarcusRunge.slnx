@@ -5,6 +5,7 @@
     <File Path="Clean-BuildArtifacts.ps1" />
     <File Path="Directory.Build.props" />
     <File Path="Export-SourceCode.ps1" />
+    <File Path="global.json" />
     <File Path="LICENSE.txt" />
     <File Path="README.md" />
   </Folder>
