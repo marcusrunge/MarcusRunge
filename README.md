@@ -1,211 +1,228 @@
 # MarcusRunge
 
-A comprehensive .NET library providing base classes, utilities, and integrations for building robust, maintainable applications. This repository contains multiple specialized packages targeting .NET Standard 2.1 and .NET 10, organized into cohesive modules for MVVM, data access, security, networking, and localization.
+A collection of reusable .NET libraries for data binding, controlled service initialization, Entity Framework Core, localization, networking, and development certificates.
 
-## Overview
-
-The MarcusRunge project is a collection of production-ready, reusable components organized into focused packages. Whether you're building desktop applications with WPF, web services with ASP.NET Core, or any .NET application, MarcusRunge provides battle-tested base classes and utilities to accelerate development.
-
-### Core Areas
-
-- **MVVM & Data Binding**: Base classes for ViewModels and bindable entities with `INotifyPropertyChanged` support
-- **Entity Framework Integration**: Enhanced data access patterns and entity configuration
-- **Security**: Certificate generation, cryptographic utilities for development and testing
-- **Networking**: IPv4/IPv6 utilities, address scanning, subnet operations
-- **Localization**: Multi-language support for WinForms and WPF applications
+The repository contains focused NuGet packages targeting .NET Standard 2.1, .NET 10, and .NET 10 for Windows.
 
 ## Packages
 
-### Core Foundation
+| Package | Target framework | Purpose |
+|---|---|---|
+| `MarcusRunge.Base` | `netstandard2.1` | Bindable base classes, entities, and controlled service initialization |
+| `MarcusRunge.Base.EntityFramework` | `net10.0` | Entity Framework Core configuration for bindable entities |
+| `MarcusRunge.Toolbox.Localization.Core` | `netstandard2.1` | Resource-based enum localization |
+| `MarcusRunge.Toolbox.Localization.Wpf` | `net10.0-windows` | WPF enum binding and localization |
+| `MarcusRunge.Toolbox.Network` | `net10.0` | IPv4 and IPv6 subnet, complement, and scanning utilities |
+| `MarcusRunge.Toolbox.Security` | `net10.0` | Windows development-certificate generation |
 
-#### **MarcusRunge.Base** ⭐ `netstandard2.1`
-Foundation library providing base classes for MVVM and data binding scenarios.
+## MarcusRunge.Base
 
-**Key Components:**
-- **`BindableBase`**: Abstract base implementing `INotifyPropertyChanged` with:
-  - Property change notifications with optional callbacks
-  - Custom equality comparison for properties
-  - Batch property notifications
-  - Automatic `SynchronizationContext` capture for UI thread safety
-  - Debug-time verification of property names
+`MarcusRunge.Base` provides the shared binding and initialization foundation. The package targets `netstandard2.1`.
 
-- **`BindableEntityBase`**: Domain entity base with:
-  - Built-in `Id` property for entity identification
-  - Timestamp support for optimistic concurrency
-  - Full MVVM binding support
+### BindableBase
 
-- **`CreateableBindableBase<TInterface, TClass, TBase>`**: Thread-safe singleton-like creation with:
-  - One-time async initialization
-  - Creation state tracking
-  - Safe event notification after creation
-  - Exception handling and reporting
+`BindableBase` implements `INotifyPropertyChanged` and provides:
 
-- **`ICreateableAware`**: Interface for creation-aware components:
-  - `IsCreated` property
-  - `Initialization` task tracking
-  - `InitializationException` for error capture
-  - `OnCreated` event
+- automatic capture of the current `SynchronizationContext`
+- synchronous notifications when raised on the captured context
+- asynchronous dispatch when raised from another context
+- `SetProperty<T>` with optional callbacks and custom comparers
+- notification of multiple properties
+- support for logical and composite notification names
+- isolation and diagnostic reporting of subscriber exceptions
 
-**Usage**: Inherit from `BindableBase` for ViewModels, `BindableEntityBase` for domain models
+A failing `PropertyChanged` subscriber does not prevent later subscribers from receiving the notification and does not propagate into the operation that caused the state change.
 
----
+### BindableEntityBase
 
-### Data Access
+`BindableEntityBase` extends `BindableBase` with:
 
-#### **MarcusRunge.Base.EntityFramework** `netstandard2.1`
-Entity Framework Core integration and configuration patterns.
+- an integer `Id` property for database identity
+- a bindable `Id` implementation using `SetProperty`
+- a `RowVersion` concurrency token maintained by the persistence layer
 
-**Key Components:**
-- **`EntityConfigurationBase<TEntity, TConfiguration>`**: Base class for Entity Framework entity configurations
-  - Automatic setup of `Id` as primary key
-  - Built-in support for concurrency tokens (RowVersion)
-  - Simplified entity mapping configuration
+Changes to `RowVersion` do not raise `PropertyChanged`.
 
-**Dependencies**: Entity Framework Core
+### CreateableBindableBase
 
-**Usage**: Inherit when configuring entities for EF Core
+`CreateableBindableBase<TInterface, TClass, TBase>` provides thread-safe synchronous creation followed by one-time asynchronous initialization.
 
-#### **MarcusRunge.Base.EntityFramework.Test** `netstandard2.1`
-Testing utilities and helpers for Entity Framework scenarios.
+Supported lifetimes:
 
----
+- `Global`: one instance per closed generic creation type
+- `Scoped`: one instance per initialization-context reference
+- `Transient`: one independent instance per creation call
 
-### Security
+Additional behavior:
 
-#### **MarcusRunge.Toolbox.Security** `net10`
-Cryptographic utilities and certificate generation for development and testing.
+- synchronous initialization through `OnCreate`
+- asynchronous initialization through `OnCreateAsync`
+- bindable lifecycle properties
+- caller-specific cancellation while waiting
+- shared initialization that is not canceled by an individual waiter
+- state-specific initialization tasks and exceptions
+- isolated `OnCreated` subscriber failures
+- immediate invocation of subscribers registered after successful initialization
+- permanent faulting of an affected creation state after initialization failure
 
-**Key Components:**
-- **`CertificateProvider`**: Self-signed certificate generation
-  - RSA key support (configurable size, default 2048)
-  - SHA-256 signing
-  - Comprehensive X.509 extensions (BasicConstraints, KeyUsage, EnhancedKeyUsage, SubjectAlternativeName)
-  - PKCS#12 (PFX) export format
-  - Ideal for development, testing, and SSL/TLS scenarios
+The first context used for a global creation state remains associated with that state. Scoped creation requires a stable, non-null reference-type context.
 
-**Usage**: 
-```csharp
-var cert = CertificateProvider.CreateCertificate("password", "localhost");
-```
+Reentrant creation of the same global or scoped creation state during synchronous initialization is not supported.
 
-**Platform**: Windows-only (`[SupportedOSPlatform("windows")]`)
+### ICreateableAware
 
-#### **MarcusRunge.Toolbox.Security.Test** `net10`
-Test suites for security utilities.
+`ICreateableAware` exposes:
 
----
+- `Initialization`
+- `InitializationException`
+- `IsCreated`
+- `IsInitializing`
+- `OnCreated`
 
-### Networking
+## MarcusRunge.Base.EntityFramework
 
-#### **MarcusRunge.Toolbox.Network** `net10`
-IPv4 and IPv6 networking utilities and address manipulation.
+`MarcusRunge.Base.EntityFramework` targets `net10.0` and depends on Entity Framework Core.
 
-**Key Components:**
-- **IPv4 Support**:
-  - `Scanner`: Scan and retrieve IPv4 addresses
-  - `Complement`: IPv4 address complementing
-  - Subnet operations
+`EntityConfigurationBase<TEntity, TConfiguration>` configures:
 
-- **IPv6 Support**:
-  - `Scanner`: Scan and retrieve IPv6 addresses
-  - `Complement`: IPv6 address complementing
-  - Comprehensive IPv6 utilities
+- `Id` as the primary key
+- `Id` as database-generated on insert
+- `RowVersion` through `IsRowVersion()`
+- optimistic concurrency through the database-generated row-version value
 
-**Usage**: Network scanning, subnet analysis, address manipulation
+Concrete configurations may override `Configure`, call `base.Configure(builder)`, and then add entity-specific mappings.
 
-#### **MarcusRunge.Toolbox.Network.Test** `net10`
-Comprehensive test coverage for networking utilities.
+## MarcusRunge.Toolbox.Localization.Core
 
----
+`MarcusRunge.Toolbox.Localization.Core` targets `netstandard2.1` and provides resource-based enum localization.
 
-### Localization & Internationalization
+### LocalizedDescriptionAttribute
 
-#### **MarcusRunge.Toolbox.Localization.Core** `netstandard2.1`
-Core localization framework for multi-language support.
+`LocalizedDescriptionAttribute` resolves enum descriptions from strongly typed `.resx` resources.
 
-**Key Components:**
-- **`LocalizedDescriptionAttribute`**: Attribute for localizable enum descriptions
-  - Resource-based localization using `.resx` files
-  - Works with `ComponentModel` infrastructure
+Behavior includes:
 
-- **`EnumDescriptionTypeConverter`**: Type converter for localized enums
+- resolution for a requested `CultureInfo`
+- fallback to `CurrentUICulture`
+- reuse of `ResourceManager` instances
+- visible `[[ResourceKey]]` markers for missing resources
+- safe handling of missing resource manifests and satellite assemblies
 
-- **`EnumDescriptionProvider`**: Provider for enum descriptions with localization support
+### EnumDescriptionProvider
 
-**Usage**: 
-```csharp
-public enum Status
-{
-    [LocalizedDescription("status_active", typeof(Resources))]
-    Active,
-    [LocalizedDescription("status_inactive", typeof(Resources))]
-    Inactive
-}
-```
+`EnumDescriptionProvider` resolves:
 
-#### **MarcusRunge.Toolbox.Localization.Wpf** `net10`
-WPF-specific localization extensions and value converters.
+- localized descriptions
+- ordinary `DescriptionAttribute` values
+- declared enum names when no description exists
+- combined localized `[Flags]` values
+- textual representations of undefined numeric values
 
-**Key Components:**
-- **`EnumBindingSourceExtension`**: XAML markup extension for enum binding with localization
-- **`EnumDescriptionValueConverter`**: WPF value converter for localized enum descriptions
+### EnumDescriptionTypeConverter
 
-**Usage**: Bind localized enum values in XAML
+`EnumDescriptionTypeConverter` integrates localized enum descriptions with the `System.ComponentModel` type-conversion infrastructure.
 
----
+## MarcusRunge.Toolbox.Localization.Wpf
 
-### Testing Utilities
+`MarcusRunge.Toolbox.Localization.Wpf` targets `net10.0-windows` and enables WPF support.
 
-#### **MarcusRunge.Toolbox.Test** `net10`
-General-purpose testing utilities and helpers.
+### EnumBindingSourceExtension
 
----
+`EnumBindingSourceExtension` exposes declared enum values as an `ItemsSource`.
 
-## Getting Started
+Nullable enum types are accepted and resolved to their underlying enum type. The resulting items source contains the declared enum values and does not add a separate `null` item.
 
-### Installation
+### EnumDescriptionValueConverter
 
-Install packages via NuGet:
+`EnumDescriptionValueConverter` converts enum values into localized descriptions.
+
+It:
+
+- forwards the WPF binding culture to the localization core
+- preserves `DependencyProperty.UnsetValue`
+- returns non-enum values unchanged
+- intentionally does not support reverse conversion
+
+## MarcusRunge.Toolbox.Network
+
+`MarcusRunge.Toolbox.Network` targets `net10.0`.
+
+### IPv4
+
+The IPv4 namespace provides:
+
+- discovery of local IPv4 host addresses
+- address-range calculation
+- subnet-mask lookup for local addresses
+- asynchronous range scanning
+- bounded parallel ping operations
+- progress reporting
+- cancellation support
+- calculation of allowed CIDR networks from excluded ranges
+
+### IPv6
+
+The IPv6 namespace provides:
+
+- discovery of local IPv6 host addresses
+- address-range calculation from prefix lengths
+- local prefix-length lookup
+- asynchronous range scanning
+- configurable scan safety limits
+- bounded parallel ping operations
+- progress reporting
+- cancellation support
+- calculation of allowed CIDR networks from excluded ranges
+
+IPv6 scanning defaults to a safety limit of 1,000,000 addresses. Callers may provide a different positive limit when required.
+
+## MarcusRunge.Toolbox.Security
+
+`MarcusRunge.Toolbox.Security` targets `net10.0`.
+
+`CertificateProvider` creates self-signed certificates for development and testing with:
+
+- configurable RSA key size
+- SHA-256 signatures
+- PKCS#1 signature padding
+- basic constraints
+- digital-signature and key-encipherment usage
+- server-authentication enhanced key usage
+- DNS subject alternative names
+- subject-key identifiers
+- password-protected PKCS#12 export
+
+The API is marked with `[SupportedOSPlatform("windows")]` and loads generated certificates using Windows machine-key storage.
+
+Generated certificates are intended for development and testing. They are not a replacement for certificates issued and managed through an appropriate production certificate infrastructure.
+
+## Installation
+
+Install only the packages required by the consuming application.
 
 ```bash
-# Foundation package
 dotnet add package MarcusRunge.Base
-
-# With Entity Framework support
 dotnet add package MarcusRunge.Base.EntityFramework
-
-# For security utilities
-dotnet add package MarcusRunge.Toolbox.Security
-
-# For networking utilities
-dotnet add package MarcusRunge.Toolbox.Network
-
-# For localization
 dotnet add package MarcusRunge.Toolbox.Localization.Core
 dotnet add package MarcusRunge.Toolbox.Localization.Wpf
+dotnet add package MarcusRunge.Toolbox.Network
+dotnet add package MarcusRunge.Toolbox.Security
 ```
 
-### Example: MVVM ViewModel
+## Usage
+
+### Bindable ViewModel
 
 ```csharp
 using MarcusRunge.Base;
 
-public class UserViewModel : BindableBase
+public sealed class UserViewModel : BindableBase
 {
-    private string _name;
-    private string _email;
+    private string? _email;
     private bool _isActive;
+    private string? _name;
 
-    public string Name
-    {
-        get => _name;
-        set => SetProperty(ref _name, value, onChanged: () => 
-        {
-            // React to name changes
-        });
-    }
-
-    public string Email
+    public string? Email
     {
         get => _email;
         set => SetProperty(ref _email, value);
@@ -216,126 +233,315 @@ public class UserViewModel : BindableBase
         get => _isActive;
         set => SetProperty(ref _isActive, value);
     }
+
+    public string? Name
+    {
+        get => _name;
+        set => SetProperty(ref _name, value, onChanged: OnNameChanged);
+    }
+
+    private void OnNameChanged()
+    {
+        // Perform dependent work after the stored value changed.
+    }
 }
 ```
 
-### Example: Entity Framework Configuration
+### Controlled service initialization
+
+```csharp
+using MarcusRunge.Base;
+
+public interface IApplicationService : ICreateableAware
+{
+}
+
+public sealed class ApplicationService
+    : CreateableBindableBase<IApplicationService, ApplicationService, ApplicationContext>,
+      IApplicationService
+{
+    protected override void OnCreate(ApplicationContext context)
+    {
+        // Establish every invariant required before the instance is published.
+    }
+
+    protected override Task OnCreateAsync(ApplicationContext context, CancellationToken cancellationToken)
+    {
+        // Perform one-time asynchronous initialization.
+        return Task.CompletedTask;
+    }
+}
+```
+
+Create and await a global instance:
+
+```csharp
+var service = await ApplicationService.CreateAsync(
+    context,
+    cancellationToken);
+```
+
+Create a context-scoped instance:
+
+```csharp
+var service = await ApplicationService.CreateAsync(
+    context,
+    CreationLifetime.Scoped,
+    cancellationToken);
+```
+
+Create an independent instance:
+
+```csharp
+var service = await ApplicationService.CreateAsync(
+    context,
+    CreationLifetime.Transient,
+    cancellationToken);
+```
+
+The cancellation token passed to `CreateAsync` cancels only that caller's wait. It does not cancel shared initialization.
+
+### Entity Framework Core configuration
 
 ```csharp
 using MarcusRunge.Base;
 using MarcusRunge.Base.EntityFramework;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-public class User : BindableEntityBase
+public sealed class User : BindableEntityBase
 {
-    public string Name { get; set; }
-    public string Email { get; set; }
+    public string Email { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
 }
 
-public class UserConfiguration : EntityConfigurationBase<User, UserConfiguration>
+public sealed class UserConfiguration
+    : EntityConfigurationBase<User, UserConfiguration>
 {
     public override void Configure(EntityTypeBuilder<User> builder)
     {
-        base.Configure(builder); // Handles Id and RowVersion
+        base.Configure(builder);
 
-        builder.Property(u => u.Name).IsRequired().HasMaxLength(100);
-        builder.Property(u => u.Email).IsRequired();
+        builder.Property(user => user.Name).IsRequired().HasMaxLength(100);
+        builder.Property(user => user.Email).IsRequired().HasMaxLength(320);
     }
 }
 ```
 
-### Example: Certificate Generation
+### Localized enum
+
+```csharp
+using MarcusRunge.Toolbox.Localization.Core;
+using System.ComponentModel;
+
+[TypeConverter(typeof(EnumDescriptionTypeConverter))]
+public enum OrderStatus
+{
+    [LocalizedDescription("OrderStatusPending", typeof(Resources))]
+    Pending = 0,
+
+    [LocalizedDescription("OrderStatusShipped", typeof(Resources))]
+    Shipped = 1,
+
+    [LocalizedDescription("OrderStatusDelivered", typeof(Resources))]
+    Delivered = 2
+}
+```
+
+Add the matching entries to the neutral and localized resource files:
+
+```text
+Properties/Resources.resx
+Properties/Resources.de.resx
+```
+
+### WPF enum binding
+
+Register the namespaces and converter:
+
+```xml
+<Window
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:Example"
+    xmlns:localization="clr-namespace:MarcusRunge.Toolbox.Localization.Wpf;assembly=MarcusRunge.Toolbox.Localization.Wpf">
+
+    <Window.Resources>
+        <localization:EnumDescriptionValueConverter x:Key="EnumDescriptionValueConverter" />
+    </Window.Resources>
+
+    <Grid>
+        <ComboBox
+            ItemsSource="{localization:EnumBindingSource {x:Type local:OrderStatus}}"
+            SelectedItem="{Binding Status}">
+            <ComboBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock
+                        Text="{Binding Converter={StaticResource EnumDescriptionValueConverter}}" />
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+    </Grid>
+</Window>
+```
+
+### Development certificate
 
 ```csharp
 using MarcusRunge.Toolbox.Security;
 
-// Create a self-signed certificate for development
-var certificate = CertificateProvider.CreateCertificate(
-    password: "dev-password",
+using var certificate = CertificateProvider.CreateCertificate(
+    password: "development-password",
     commonName: "localhost",
     rsaKeySize: 2048,
-    years: 5
-);
-
-// Use in your application
-services.AddHttpsRedirection(options => 
-{
-    options.HttpsPort = 5001;
-});
+    years: 5);
 ```
-
-### Example: Localization
-
-```csharp
-// Define localized enum
-public enum OrderStatus
-{
-    [LocalizedDescription("order_pending", typeof(Resources))]
-    Pending,
-    [LocalizedDescription("order_shipped", typeof(Resources))]
-    Shipped,
-    [LocalizedDescription("order_delivered", typeof(Resources))]
-    Delivered
-}
-
-// In XAML (WPF)
-<ComboBox ItemsSource="{markup:EnumBindingSource markup:local, OrderStatus}"/>
-
-// Or use the converter
-<TextBlock Text="{Binding Status, Converter={local:EnumDescriptionValueConverter}}"/>
-```
-
-## Features
-
-✅ **MVVM Foundation**: Production-ready `INotifyPropertyChanged` implementation  
-✅ **Entity Framework Integration**: Simplified entity configuration  
-✅ **Security Utilities**: Certificate generation for SSL/TLS development  
-✅ **Networking Tools**: IPv4/IPv6 address and subnet utilities  
-✅ **Localization Support**: Resource-based multi-language support  
-✅ **.NET Standard 2.1**: Broad framework compatibility  
-✅ **Thread-Safe**: Proper synchronization for concurrent scenarios  
-✅ **Performance**: Optimized with minimal allocations  
-✅ **Comprehensive Documentation**: Full XML docs and IntelliSense support  
-✅ **Well-Tested**: Extensive unit test coverage  
-
-## Requirements
-
-- **.NET Standard 2.1** or higher (MarcusRunge.Base)
-- **.NET 10** or higher (Toolbox packages)
-- No external dependencies (except Entity Framework for EF integration)
 
 ## Building
 
+Restore and build the solution:
+
 ```bash
-dotnet build
+dotnet restore MarcusRunge.slnx
+dotnet build MarcusRunge.slnx
 ```
+
+Build configurations are centralized in `Directory.Build.props`.
+
+The repository uses MinVer for tag-based package versioning. Version tags use the `v` prefix.
 
 ## Testing
 
+Run all tests:
+
 ```bash
-dotnet test
+dotnet test MarcusRunge.slnx
 ```
 
-## Project Structure
+The repository contains test projects for:
 
+- `MarcusRunge.Base`
+- `MarcusRunge.Base.EntityFramework`
+- `MarcusRunge.Toolbox.Network`
+- `MarcusRunge.Toolbox.Security`
+
+Tests use xUnit v3.
+
+## Continuous integration
+
+The repository contains two GitHub Actions workflows:
+
+- `main.yml` builds and tests pushes and pull requests targeting `main`
+- `release.yml` restores, builds, packs, and publishes NuGet packages for `v*` tags based on the `release` branch
+
+NuGet publication uses the `nuget` GitHub environment and a configured `NUGET_API_KEY` secret.
+
+## Repository utilities
+
+### Export-SourceCode.ps1
+
+Exports supported source and configuration files into `Source.txt`.
+
+The script excludes generated and transient directories including:
+
+- `.git`
+- `.vs`
+- `artifacts`
+- `bin`
+- `obj`
+- `packages`
+- `TestResults`
+
+Because local PowerShell execution policies may block unsigned scripts, run it explicitly when required:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Export-SourceCode.ps1
 ```
+
+### Clean-BuildArtifacts.ps1
+
+Removes generated build and test directories such as:
+
+- `bin`
+- `obj`
+- `.vs`
+- `TestResults`
+- `artifacts`
+
+Run it explicitly when required:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Clean-BuildArtifacts.ps1
+```
+
+## Repository structure
+
+```text
 MarcusRunge/
-├── MarcusRunge.Base/                          # Core MVVM base classes
-├── MarcusRunge.Base.EntityFramework/          # EF Core integration
-├── MarcusRunge.Base.EntityFramework.Test/     # EF testing utilities
-├── MarcusRunge.Base.Tests/                    # Core library tests
-├── MarcusRunge.Toolbox.Security/              # Security utilities
-├── MarcusRunge.Toolbox.Security.Test/         # Security tests
-├── MarcusRunge.Toolbox.Network/               # IPv4/IPv6 utilities
-├── MarcusRunge.Toolbox.Network.Test/          # Network tests
-├── MarcusRunge.Toolbox.Localization.Core/     # Core localization
-├── MarcusRunge.Toolbox.Localization.Wpf/      # WPF localization
-└── MarcusRunge.Toolbox.Test/                  # General testing utilities
+├── .github/
+│   └── workflows/
+│       ├── main.yml
+│       └── release.yml
+├── MarcusRunge.Base/
+│   ├── Properties/
+│   │   ├── AssemblyInfo.cs
+│   │   ├── Resources.de.resx
+│   │   ├── Resources.Designer.cs
+│   │   └── Resources.resx
+│   ├── BindableBase.cs
+│   ├── BindableEntityBase.cs
+│   ├── CreateableBindableBase.cs
+│   ├── CreationLifetime.cs
+│   ├── ICreateableAware.cs
+│   └── MarcusRunge.Base.csproj
+├── MarcusRunge.Base.EntityFramework/
+│   ├── EntityConfigurationBase.cs
+│   └── MarcusRunge.Base.EntityFramework.csproj
+├── MarcusRunge.Base.EntityFramework.Test/
+│   ├── EntityConfigurationBaseTest.cs
+│   └── MarcusRunge.Base.EntityFramework.Test.csproj
+├── MarcusRunge.Base.Tests/
+│   ├── BindableBaseTest.cs
+│   ├── BindableEntityBaseTest.cs
+│   ├── CreateableBindableBaseTest.cs
+│   └── MarcusRunge.Base.Test.csproj
+├── MarcusRunge.Toolbox.Localization.Core/
+│   ├── EnumDescriptionProvider.cs
+│   ├── EnumDescriptionTypeConverter.cs
+│   ├── LocalizedDescriptionAttribute.cs
+│   └── MarcusRunge.Toolbox.Localization.Core.csproj
+├── MarcusRunge.Toolbox.Localization.Wpf/
+│   ├── EnumBindingSourceExtension.cs
+│   ├── EnumDescriptionValueConverter.cs
+│   └── MarcusRunge.Toolbox.Localization.Wpf.csproj
+├── MarcusRunge.Toolbox.Network/
+│   ├── Helper/
+│   ├── IPv4/
+│   ├── IPv6/
+│   └── MarcusRunge.Toolbox.Network.csproj
+├── MarcusRunge.Toolbox.Network.Test/
+│   └── MarcusRunge.Toolbox.Network.Test.csproj
+├── MarcusRunge.Toolbox.Security/
+│   ├── CertificateProvider.cs
+│   └── MarcusRunge.Toolbox.Security.csproj
+├── MarcusRunge.Toolbox.Security.Test/
+│   ├── CertificateProviderTest.cs
+│   └── MarcusRunge.Toolbox.Security.Test.csproj
+├── .gitattributes
+├── .gitignore
+├── Clean-BuildArtifacts.ps1
+├── Directory.Build.props
+├── Export-SourceCode.ps1
+├── LICENSE.txt
+├── MarcusRunge.slnx
+└── README.md
 ```
+
+Generated `bin`, `obj`, `.vs`, `TestResults`, and `artifacts` directories are intentionally omitted from this structure.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.txt](LICENSE.txt) file for details.
+This project is distributed under the MIT License. See [LICENSE.txt](LICENSE.txt).
 
 ## Author
 
@@ -348,15 +554,4 @@ This project is licensed under the MIT License - see the [LICENSE.txt](LICENSE.t
 
 ## Contributing
 
-Contributions are welcome! Please feel free to:
-- Submit a pull request with improvements
-- Open an issue for bugs or feature requests
-- Share feedback and suggestions
-
-## Support
-
-For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/marcusrunge/MarcusRunge).
-
----
-
-**Made with ❤️ by Marcus Runge**
+Bug reports, feature requests, and pull requests are welcome through the GitHub repository.

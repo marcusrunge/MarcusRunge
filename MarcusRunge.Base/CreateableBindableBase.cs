@@ -32,9 +32,7 @@ namespace MarcusRunge.Base
         {
             add
             {
-                if (value is null)
-                    return;
-
+                if (value is null) return;
                 if (IsCreated)
                 {
                     InvokeCreatedHandler(value);
@@ -49,14 +47,11 @@ namespace MarcusRunge.Base
                         return;
                     }
                 }
-
                 InvokeCreatedHandler(value);
             }
             remove
             {
-                if (value is null)
-                    return;
-
+                if (value is null) return;
                 lock (_createdHandlersSynchronization)
                 {
                     _createdHandlers -= value;
@@ -165,10 +160,7 @@ namespace MarcusRunge.Base
         public static async Task<TInterface> CreateAsync(TBase context, CreationLifetime lifetime, CancellationToken cancellationToken = default)
         {
             var instance = CreateInstance(context, lifetime);
-
-            if (instance.Initialization is { } initialization)
-                await WaitWithCancellationAsync(initialization, cancellationToken).ConfigureAwait(false);
-
+            if (instance.Initialization is { } initialization) await WaitWithCancellationAsync(initialization, cancellationToken).ConfigureAwait(false);
             return instance;
         }
 
@@ -183,15 +175,11 @@ namespace MarcusRunge.Base
             lock (_globalStateSynchronization)
             {
                 var state = _globalState;
-
                 lock (state.Synchronization)
                 {
                     var synchronousCreationIsRunning = state.CreationStarted && !state.CreationCompletion.Task.IsCompleted;
                     var asynchronousInitializationIsRunning = state.Initialization is { IsCompleted: false };
-
-                    if (synchronousCreationIsRunning || asynchronousInitializationIsRunning)
-                        throw new InvalidOperationException($"The global creation state for '{typeof(TClass).FullName}' cannot be reset while initialization is running.");
-
+                    if (synchronousCreationIsRunning || asynchronousInitializationIsRunning) throw new InvalidOperationException($"The global creation state for '{typeof(TClass).FullName}' cannot be reset while initialization is running.");
                     _globalState = new CreationState();
                 }
             }
@@ -204,6 +192,8 @@ namespace MarcusRunge.Base
         /// <remarks>
         /// Implementations must establish every invariant required for safely exposing the instance.
         /// A failure permanently faults the affected creation state.
+        /// Implementations must not directly or indirectly request the same global or scoped creation
+        /// state while synchronous creation is in progress.
         /// </remarks>
         protected abstract void OnCreate(TBase context);
 
@@ -234,14 +224,10 @@ namespace MarcusRunge.Base
         private static TClass CreateCore(CreationState state, TBase context)
         {
             var startsCreation = false;
-
             lock (state.Synchronization)
             {
                 ValidateContext(state, context);
-
-                if (state.CreationException is { } creationException)
-                    ExceptionDispatchInfo.Capture(creationException).Throw();
-
+                if (state.CreationException is { } creationException) ExceptionDispatchInfo.Capture(creationException).Throw();
                 if (!state.CreationStarted)
                 {
                     state.CreationStarted = true;
@@ -275,12 +261,8 @@ namespace MarcusRunge.Base
 
         private static CreationState GetScopedState(TBase context)
         {
-            if (typeof(TBase).IsValueType)
-                throw new InvalidOperationException($"The scoped lifetime requires the initialization context type '{typeof(TBase).FullName}' to be a reference type.");
-
-            if (context is not object scope)
-                throw new ArgumentNullException(nameof(context), "The scoped lifetime requires a non-null initialization context.");
-
+            if (typeof(TBase).IsValueType) throw new InvalidOperationException($"The scoped lifetime requires the initialization context type '{typeof(TBase).FullName}' to be a reference type.");
+            if (context is not object scope) throw new ArgumentNullException(nameof(context), "The scoped lifetime requires a non-null initialization context.");
             return _scopedStates.GetValue(scope, CreateScopedState);
         }
 
@@ -299,20 +281,23 @@ namespace MarcusRunge.Base
 
             try
             {
-                // User-defined hooks run outside internal locks to prevent lock inversion and reentrancy deadlocks.
+                // User-defined hooks run outside internal locks to prevent lock inversion.
+                // Reentrant creation using the same creation state is not supported.
                 var instance = new TClass();
                 instance.AttachCreationState(state);
                 instance.OnCreate(context);
 
-                // The initialization task is assigned before the instance is published to waiting callers.
-                var initialization = instance.InitializeAsync(context);
-
+                // The start gate ensures that the initialization task is stored and its bindable state
+                // is published before user-defined asynchronous initialization can complete.
+                var initializationStart = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var initialization = instance.InitializeAsync(context, initializationStart.Task);
                 lock (state.Synchronization)
                 {
                     state.Initialization = initialization;
                 }
-
+                instance.RaiseCreationStateChanged();
                 state.CreationCompletion.TrySetResult(instance);
+                initializationStart.TrySetResult(null);
             }
             catch (Exception exception)
             {
@@ -321,7 +306,6 @@ namespace MarcusRunge.Base
                     state.CreationException = exception;
                     state.InitializationException = exception;
                 }
-
                 state.CreationCompletion.TrySetException(exception);
             }
             finally
@@ -344,10 +328,7 @@ namespace MarcusRunge.Base
                 state.HasInitializationContext = true;
                 return;
             }
-
-            if (ContextsAreIdentical(state.InitializationContext, context))
-                return;
-
+            if (ContextsAreIdentical(state.InitializationContext, context)) return;
             throw new InvalidOperationException($"The creation state for '{typeof(TClass).FullName}' was already initialized with a different context. Use '{CreationLifetime.Scoped}' with a stable context instance or '{CreationLifetime.Transient}' for an independent object graph.");
         }
 
@@ -372,35 +353,32 @@ namespace MarcusRunge.Base
             using (cancellationToken.Register(static state => ((TaskCompletionSource<object?>)state!).TrySetResult(null), cancellationCompletion))
             {
                 var completedTask = await Task.WhenAny(task, cancellationCompletion.Task).ConfigureAwait(false);
-
                 // Initialization takes precedence when completion and cancellation become observable together.
                 if (task.IsCompleted)
                 {
                     await task.ConfigureAwait(false);
                     return;
                 }
-
-                if (completedTask == cancellationCompletion.Task)
-                    throw new OperationCanceledException(cancellationToken);
-
+                if (completedTask == cancellationCompletion.Task) throw new OperationCanceledException(cancellationToken);
                 await task.ConfigureAwait(false);
             }
         }
 
         private void AttachCreationState(CreationState state)
         {
-            if (Interlocked.CompareExchange(ref _creationState, state, null) is not null)
-                throw new InvalidOperationException("The instance is already attached to a creation state.");
+            if (Interlocked.CompareExchange(ref _creationState, state, null) is not null) throw new InvalidOperationException("The instance is already attached to a creation state.");
         }
 
         private CreationState? GetCreationState() => Volatile.Read(ref _creationState);
 
         private CreationState GetRequiredCreationState() => GetCreationState() ?? throw new InvalidOperationException("The instance is not attached to a creation state.");
 
-        private async Task InitializeAsync(TBase context)
+        private async Task InitializeAsync(TBase context, Task initializationStart)
         {
             var state = GetRequiredCreationState();
-
+            // Do not enter user-defined asynchronous initialization until the Initialization property
+            // and the initial bindable lifecycle state have been published.
+            await initializationStart.ConfigureAwait(false);
             try
             {
                 await OnCreateAsync(context, CancellationToken.None).ConfigureAwait(false);
@@ -409,9 +387,11 @@ namespace MarcusRunge.Base
             catch (Exception exception)
             {
                 Volatile.Write(ref state.InitializationException, exception);
+                RaiseCreationStateChanged();
                 throw;
             }
-
+            // Publish the completed lifecycle state before invoking OnCreated subscribers.
+            RaiseCreationStateChanged();
             RaiseCreated();
         }
 
@@ -430,18 +410,21 @@ namespace MarcusRunge.Base
         private void RaiseCreated()
         {
             EventHandler? handlers;
-
             lock (_createdHandlersSynchronization)
             {
                 handlers = _createdHandlers;
                 _createdHandlers = null;
             }
+            if (handlers is null) return;
+            foreach (var subscriber in handlers.GetInvocationList()) InvokeCreatedHandler((EventHandler)subscriber);
+        }
 
-            if (handlers is null)
-                return;
-
-            foreach (var subscriber in handlers.GetInvocationList())
-                InvokeCreatedHandler((EventHandler)subscriber);
+        private void RaiseCreationStateChanged()
+        {
+            OnPropertyChanged(nameof(Initialization));
+            OnPropertyChanged(nameof(InitializationException));
+            OnPropertyChanged(nameof(IsInitializing));
+            OnPropertyChanged(nameof(IsCreated));
         }
 
         private void TryReportCreatedSubscriberException(Exception exception)

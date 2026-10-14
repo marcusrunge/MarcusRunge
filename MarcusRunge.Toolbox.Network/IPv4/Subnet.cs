@@ -18,17 +18,12 @@ namespace MarcusRunge.Toolbox.Network.IPv4
         public static IPAddress GetSubnetMask(IPAddress ipAddress)
         {
             ArgumentNullException.ThrowIfNull(ipAddress);
-
             if (ipAddress.AddressFamily != AddressFamily.InterNetwork)
             {
                 throw new ArgumentException("Address must be an IPv4 address.", nameof(ipAddress));
             }
-
             UnicastIPAddressInformation? addressInformation = UnicastHelper.FindUnicastAddress(ipAddress);
-
-            return addressInformation?.IPv4Mask is IPAddress mask
-                ? mask
-                : throw new ArgumentException($"Can't find subnet mask for IPv4 address '{ipAddress}'.", nameof(ipAddress));
+            return addressInformation?.IPv4Mask is IPAddress mask ? mask : throw new ArgumentException($"Can't find subnet mask for IPv4 address '{ipAddress}'.", nameof(ipAddress));
         }
     }
 }

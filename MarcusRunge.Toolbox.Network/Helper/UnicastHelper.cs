@@ -10,7 +10,6 @@ namespace MarcusRunge.Toolbox.Network.Helper
             foreach (NetworkInterface networkInterface in NetworkInterface.GetAllNetworkInterfaces())
             {
                 IPInterfaceProperties properties = networkInterface.GetIPProperties();
-
                 foreach (UnicastIPAddressInformation addressInformation in properties.UnicastAddresses)
                 {
                     if (ipAddress.Equals(addressInformation.Address))
@@ -19,7 +18,6 @@ namespace MarcusRunge.Toolbox.Network.Helper
                     }
                 }
             }
-
             return null;
         }
     }

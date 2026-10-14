@@ -1,135 +1,206 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Threading;
 
 namespace MarcusRunge.Base
 {
     /// <summary>
-    /// Base class for ViewModels (or other bindable objects) that provides
-    /// <see cref="INotifyPropertyChanged"/> support and several convenience helpers.
+    /// Provides a base implementation for objects that notify subscribers when property values change.
     /// </summary>
     /// <remarks>
-    /// Enhancements over the simple pattern:
-    /// - Optional change callback (onChanged) for follow-up work.
-    /// - Accepts a custom <see cref="IEqualityComparer{T}"/> for special comparison logic.
-    /// - Ability to raise multiple property notifications at once.
-    /// - Optional SynchronizationContext support: the context is captured by default at construction time
-    ///   but can be overridden by derived types via the protected <see cref="SynchronizationContext"/> property.
-    /// - Debug-time verification of property names to catch typos early.
+    /// The synchronization context available during construction is captured automatically.
+    /// No context is captured when the instance is created on a thread without an installed
+    /// synchronization context. Derived classes can replace or remove the captured context
+    /// through <see cref="NotificationContext"/>.
     /// </remarks>
     public abstract class BindableBase : INotifyPropertyChanged
     {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="BindableBase"/> class and captures the current
+        /// synchronization context, if one is available.
+        /// </summary>
+        protected BindableBase() => NotificationContext = SynchronizationContext.Current;
+
         /// <summary>
         /// Occurs when a property value changes.
         /// </summary>
         public event PropertyChangedEventHandler? PropertyChanged;
 
         /// <summary>
-        /// The synchronization context used to raise PropertyChanged. Set to the current context in the constructor.
-        /// Derived classes (UI libraries) can override or set this to ensure notifications are raised on the UI thread.
+        /// Gets or sets the synchronization context used to dispatch property change notifications.
         /// </summary>
-        protected SynchronizationContext? SynchronizationContext { get; set; }
-
-        /// <summary>
-        /// Initializes a new instance of <see cref="BindableBase"/> and captures the current <see cref="SynchronizationContext"/>, if any.
-        /// </summary>
-
-        protected BindableBase() => SynchronizationContext = SynchronizationContext.Current;
+        /// <remarks>
+        /// When no context is assigned, notifications are raised synchronously on the calling thread.
+        /// When the calling context differs from the assigned context, notifications are posted
+        /// asynchronously to the assigned context.
+        /// </remarks>
+        protected SynchronizationContext? NotificationContext { get; set; }
 
         /// <summary>
         /// Raises the <see cref="PropertyChanged"/> event for the specified property.
         /// </summary>
-
         /// <param name="propertyName">
-        /// The name of the property that changed. When omitted, the compiler supplies the caller member name.
-        /// A null value is supported and indicates that all properties may have changed.
+        /// The name of the changed property. A <see langword="null"/> or empty value indicates that
+        /// all properties may have changed. Logical or composite property names are also supported.
         /// </param>
-        /// <remarks>
-        /// This implementation marshals the raise onto the captured <see cref="SynchronizationContext"/>, if available.
-        /// Override this method in derived types to change marshalling behavior (for example in platform-specific UI layers).
-        /// </remarks>
         protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
             VerifyPropertyName(propertyName);
-
-            var handler = PropertyChanged;
-            if (handler == null)
-                return;
-
-            var args = new PropertyChangedEventArgs(propertyName);
-
-            var sync = SynchronizationContext;
-            if (sync != null && sync != SynchronizationContext.Current)
+            var notificationContext = NotificationContext;
+            if (notificationContext is not null && notificationContext != SynchronizationContext.Current)
             {
-                // Post to the captured synchronization context so UI listeners always receive events on the expected thread.
-                sync.Post(_ => handler.Invoke(this, args), null);
+                // Resolve the current subscriber list when the callback executes because subscribers may
+                // change between scheduling and dispatching the notification.
+                notificationContext.Post(static state =>
+                {
+                    var notification = (PropertyChangedNotification)state!;
+                    notification.Source.RaisePropertyChanged(notification.PropertyName);
+                }, new PropertyChangedNotification(this, propertyName));
                 return;
             }
 
-            handler.Invoke(this, args);
+            RaisePropertyChanged(propertyName);
         }
 
         /// <summary>
-        /// Raises <see cref="PropertyChanged"/> for multiple properties in one call.
+        /// Raises <see cref="PropertyChanged"/> for multiple properties.
         /// </summary>
-        /// <param name="propertyNames">Property names to raise. If none provided or if the array is null, a single notification with null propertyName is raised.</param>
-        protected void RaisePropertyChanged(params string[]? propertyNames)
+        /// <param name="propertyNames">
+        /// The property names to notify. When no names are supplied, a single notification for all
+        /// properties is raised.
+        /// </param>
+        protected void RaisePropertyChanged(params string?[] propertyNames)
         {
-            if (propertyNames == null || propertyNames.Length == 0)
+            if (propertyNames.Length == 0)
             {
                 OnPropertyChanged(null);
                 return;
             }
 
-            foreach (var name in propertyNames)
-                OnPropertyChanged(name);
+            foreach (var propertyName in propertyNames) OnPropertyChanged(propertyName);
         }
 
         /// <summary>
-        /// Sets a property's backing field and raises <see cref="PropertyChanged"/> only if the value actually changed.
-        /// This overload accepts an optional change callback and an optional custom comparer.
+        /// Assigns a value to a backing field and raises <see cref="PropertyChanged"/> when the value changed.
         /// </summary>
-        /// <typeparam name="T">The property type.</typeparam>
-        /// <param name="backingField">A reference to the field that stores the property's current value.</param>
-        /// <param name="value">The new value to assign.</param>
-        /// <param name="onChanged">Optional action invoked after the field was updated but before raising PropertyChanged.</param>
-        /// <param name="comparer">Optional equality comparer. Defaults to <see cref="EqualityComparer{T}.Default"/>.</param>
-        /// <param name="propertyName">The name of the property that changed. When omitted, the compiler supplies the caller member name.</param>
-        /// <returns><c>true</c> if the value was changed and a notification was raised; otherwise <c>false</c>.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        /// <typeparam name="T">The property value type.</typeparam>
+        /// <param name="backingField">A reference to the property's backing field.</param>
+        /// <param name="value">The value to assign.</param>
+        /// <param name="propertyName">
+        /// The name of the changed property. When omitted, the compiler supplies the caller member name.
+        /// </param>
+        /// <param name="onChanged">
+        /// An optional callback invoked after the backing field was updated and before the notification is raised.
+        /// If the callback throws an exception, the new field value remains assigned and no notification is raised.
+        /// </param>
+        /// <param name="comparer">
+        /// An optional equality comparer. <see cref="EqualityComparer{T}.Default"/> is used when omitted.
+        /// </param>
+        /// <returns>
+        /// <see langword="true"/> when the value changed; otherwise <see langword="false"/>.
+        /// </returns>
         protected virtual bool SetProperty<T>(ref T backingField, T value, [CallerMemberName] string? propertyName = null, Action? onChanged = null, IEqualityComparer<T>? comparer = null)
         {
             comparer ??= EqualityComparer<T>.Default;
-
-            if (comparer.Equals(backingField, value))
-                return false;
-
+            if (comparer.Equals(backingField, value)) return false;
             backingField = value;
-
             onChanged?.Invoke();
-
             OnPropertyChanged(propertyName);
-
             return true;
         }
 
+        /// <summary>
+        /// Handles an exception thrown by a <see cref="PropertyChanged"/> subscriber.
+        /// </summary>
+        /// <param name="exception">The subscriber exception.</param>
+        /// <remarks>
+        /// Subscriber failures do not prevent other subscribers from being invoked and do not propagate
+        /// to the operation that raised the notification. Derived classes may override this method to
+        /// integrate diagnostic reporting. Exceptions thrown by this method are isolated as well.
+        /// </remarks>
+        protected virtual void OnPropertyChangedSubscriberException(Exception exception) => Debug.WriteLine($"A PropertyChanged subscriber threw an exception: {exception}");
 
         /// <summary>
-        /// In debug builds verifies that a supplied property name actually exists on this instance.
-        /// Helps catch typos in strings passed to <see cref="OnPropertyChanged"/> or <see cref="RaisePropertyChanged"/>.
+        /// Provides a debug-only extension point for validating property notification names.
         /// </summary>
-        /// <param name="propertyName">The property name to verify. Null is accepted and means "all properties".</param>
+        /// <param name="propertyName">
+        /// The property notification name to validate. A <see langword="null"/> or empty value represents
+        /// all properties. Logical and composite names are supported by the base implementation.
+        /// </param>
+        /// <remarks>
+        /// The base implementation intentionally performs no validation because property notification names
+        /// do not have to identify public CLR properties. Derived classes may override this method when they
+        /// require stricter validation.
+        /// </remarks>
         [Conditional("DEBUG")]
-        protected void VerifyPropertyName(string? propertyName)
+        protected virtual void VerifyPropertyName(string? propertyName)
         {
-            // Intentionally left blank: allow raising PropertyChanged for names that may not map to a CLR property.
-            // Some callers use logical or composite property names that are not actual CLR properties (tests rely on this).
-            // Keep this method present so derived classes can override it if stricter verification is desired.
-            _ = propertyName; // avoid unused parameter warning in release builds
+            // PropertyChanged supports logical or composite names that do not necessarily map to public CLR properties.
+            _ = propertyName;
+        }
+
+        /// <summary>
+        /// Raises a property change notification synchronously on the current thread.
+        /// </summary>
+        /// <param name="propertyName">The name of the changed property.</param>
+        /// <remarks>
+        /// Each subscriber is invoked independently so a failing subscriber cannot prevent subsequent
+        /// subscribers from receiving the notification.
+        /// </remarks>
+        private void RaisePropertyChanged(string? propertyName)
+        {
+            var handlers = PropertyChanged;
+            if (handlers is null) return;
+
+            var args = new PropertyChangedEventArgs(propertyName);
+            foreach (var subscriber in handlers.GetInvocationList())
+            {
+                try
+                {
+                    ((PropertyChangedEventHandler)subscriber)(this, args);
+                }
+                catch (Exception exception)
+                {
+                    TryReportPropertyChangedSubscriberException(exception);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reports a subscriber exception while isolating failures from the diagnostic handler itself.
+        /// </summary>
+        /// <param name="exception">The subscriber exception.</param>
+        private void TryReportPropertyChangedSubscriberException(Exception exception)
+        {
+            try
+            {
+                OnPropertyChangedSubscriberException(exception);
+            }
+            catch (Exception diagnosticException)
+            {
+                Debug.WriteLine($"Reporting a PropertyChanged subscriber exception failed: {diagnosticException}");
+            }
+        }
+
+        /// <summary>
+        /// Contains the data required to dispatch a property change notification to another synchronization context.
+        /// </summary>
+        /// <remarks>
+        /// Initializes a new instance of the <see cref="PropertyChangedNotification"/> class.
+        /// </remarks>
+        /// <param name="source">The notification source.</param>
+        /// <param name="propertyName">The name of the changed property.</param>
+        private sealed class PropertyChangedNotification(BindableBase source, string? propertyName)
+        {
+            /// <summary>
+            /// Gets the name of the changed property.
+            /// </summary>
+            public string? PropertyName { get; } = propertyName;
+
+            /// <summary>
+            /// Gets the notification source.
+            /// </summary>
+            public BindableBase Source { get; } = source;
         }
     }
 }

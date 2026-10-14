@@ -29,62 +29,29 @@ namespace MarcusRunge.Toolbox.Security
         {
             // Create a new RSA key pair with the specified key size
             using var rsa = RSA.Create(rsaKeySize);
-
             // Create a certificate request with the specified common name, RSA key, hash algorithm, and signature padding
-            var request = new CertificateRequest(
-                $"CN={commonName}",
-                rsa,
-                HashAlgorithmName.SHA256,
-                RSASignaturePadding.Pkcs1);
-
+            var request = new CertificateRequest($"CN={commonName}", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             // Add Basic Constraints extension (not a CA, no path length constraint, critical)
-            request.CertificateExtensions.Add(
-                new X509BasicConstraintsExtension(
-                    false,
-                    false,
-                    0,
-                    true));
-
+            request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
             // Add Key Usage extension (Digital Signature and Key Encipherment, critical)
-            request.CertificateExtensions.Add(
-                new X509KeyUsageExtension(
-                    X509KeyUsageFlags.DigitalSignature |
-                    X509KeyUsageFlags.KeyEncipherment,
-                    true));
-
+            request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, true));
             // Add Enhanced Key Usage extension (Server Authentication, not critical)
-            request.CertificateExtensions.Add(
-                new X509EnhancedKeyUsageExtension(
-                    [
-                        new Oid("1.3.6.1.5.5.7.3.1") // Server Authentication
-                    ],
-                    false));
-
+            request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            [
+                new Oid("1.3.6.1.5.5.7.3.1") // Server Authentication
+            ], false));
             // Add Subject Alternative Name extension with the common name as a DNS name
             var sanBuilder = new SubjectAlternativeNameBuilder();
             sanBuilder.AddDnsName(commonName);
             request.CertificateExtensions.Add(sanBuilder.Build());
-
             // Add Subject Key Identifier extension (not critical)
-            request.CertificateExtensions.Add(
-                new X509SubjectKeyIdentifierExtension(
-                    request.PublicKey,
-                    false));
-
+            request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
             // Create a self-signed certificate with the specified validity period
-            using var certificate = request.CreateSelfSigned(
-                DateTimeOffset.UtcNow.AddMinutes(-5),
-                DateTimeOffset.UtcNow.AddYears(years));
-
+            using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddYears(years));
             // Set the friendly name of the certificate to the common name
             certificate.FriendlyName = commonName;
-
             // Export the certificate as PKCS#12 (PFX) with the specified password and load it with the appropriate key storage flags
-            return X509CertificateLoader.LoadPkcs12(
-                certificate.Export(X509ContentType.Pfx, password),
-                password,
-                X509KeyStorageFlags.MachineKeySet |
-                X509KeyStorageFlags.Exportable);
+            return X509CertificateLoader.LoadPkcs12(certificate.Export(X509ContentType.Pfx, password), password, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
         }
     }
 }
