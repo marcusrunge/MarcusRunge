@@ -15,7 +15,7 @@ namespace MarcusRunge.Base
     public abstract class CreateableBindableBase<TInterface, TClass, TBase> : BindableBase, ICreateableAware where TClass : CreateableBindableBase<TInterface, TClass, TBase>, TInterface, new()
     {
         private static readonly object _globalStateSynchronization = new();
-        private static readonly ConditionalWeakTable<object, CreationState> _scopedStates = new();
+        private static readonly ConditionalWeakTable<object, CreationState> _scopedStates = [];
 
         [ThreadStatic]
         private static CreationState? _currentCreationState;
