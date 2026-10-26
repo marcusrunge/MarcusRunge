@@ -439,7 +439,7 @@ namespace MarcusRunge.Base.Test
                 failingContext,
                 CreationLifetime.Scoped);
 
-            var failingInitialization = Assert.IsAssignableFrom<Task>(failing.Initialization);
+            var failingInitialization = Assert.IsType<Task>(failing.Initialization, exactMatch: false);
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => failingInitialization.WaitAsync(cancellationToken));
 
@@ -579,16 +579,13 @@ namespace MarcusRunge.Base.Test
             object context,
             Task startSignal,
             CancellationToken cancellationToken) =>
-            Enumerable.Range(0, 10)
-                .Select(_ => Task.Run(async () =>
-                {
-                    await startSignal.WaitAsync(cancellationToken);
-                    return TestCreateable<TScenario>.Create(context, CreationLifetime.Scoped);
-                }, cancellationToken))
-                .ToArray();
+            [.. Enumerable.Range(0, 10)                .Select(_ => Task.Run(async () =>
+            {
+                await startSignal.WaitAsync(cancellationToken);
+                return TestCreateable<TScenario>.Create(context, CreationLifetime.Scoped);
+            }, cancellationToken))];
 
-        private static TaskCompletionSource CreateCompletionSource() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private static TaskCompletionSource CreateCompletionSource() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         private static async Task WaitForInitializationAsync(ICreateableAware createable, CancellationToken cancellationToken)
         {
