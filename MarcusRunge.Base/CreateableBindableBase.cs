@@ -46,7 +46,6 @@ namespace MarcusRunge.Base
                         return;
                     }
                 }
-
                 InvokeCreatedHandler(value);
             }
             remove
@@ -176,7 +175,6 @@ namespace MarcusRunge.Base
             lock (_globalStateSynchronization)
             {
                 var state = _globalState;
-
                 lock (state.Synchronization)
                 {
                     var synchronousCreationIsRunning = state.CreationStarted && !state.CreationCompletion.Task.IsCompleted;
@@ -240,7 +238,6 @@ namespace MarcusRunge.Base
         private static TClass CreateCore(CreationState state, TBase context)
         {
             var startsCreation = false;
-
             lock (state.Synchronization)
             {
                 ValidateContext(state, context);
@@ -328,7 +325,6 @@ namespace MarcusRunge.Base
                     state.CreationException = exception;
                     state.InitializationException = exception;
                 }
-
                 state.CreationCompletion.TrySetException(exception);
             }
             finally
@@ -377,7 +373,6 @@ namespace MarcusRunge.Base
             using (cancellationToken.Register(static state => ((TaskCompletionSource<object?>)state!).TrySetResult(null), cancellationCompletion))
             {
                 var completedTask = await Task.WhenAny(task, cancellationCompletion.Task).ConfigureAwait(false);
-
                 // Initialization takes precedence when completion and cancellation become observable together.
                 if (task.IsCompleted)
                 {
@@ -441,12 +436,14 @@ namespace MarcusRunge.Base
         private void RaiseCreated()
         {
             EventHandler? handlers;
-
             lock (_createdHandlersSynchronization)
             {
                 handlers = _createdHandlers;
                 _createdHandlers = null;
             }
+            if (handlers is null) return;
+            foreach (var subscriber in handlers.GetInvocationList()) InvokeCreatedHandler((EventHandler)subscriber);
+        }
 
             if (handlers is null) return;
 

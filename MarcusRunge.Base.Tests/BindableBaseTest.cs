@@ -13,17 +13,16 @@ namespace MarcusRunge.Base.Test
         [Fact]
         public void SetProperty_WhenValueChanges_UpdatesValueAndRaisesPropertyChanged()
         {
-            // Arrange
+            // Disable context dispatch because this test verifies SetProperty behavior independently
+            // from synchronization-context forwarding.
             var systemUnderTest = new TestBindableBase();
             systemUnderTest.DisableNotificationContext();
             var raisedProperties = new List<string?>();
 
             systemUnderTest.PropertyChanged += (_, args) => raisedProperties.Add(args.PropertyName);
 
-            // Act
             systemUnderTest.Name = "Test";
 
-            // Assert
             Assert.Equal("Test", systemUnderTest.Name);
             var item = Assert.Single(raisedProperties);
             Assert.Equal(nameof(TestBindableBase.Name), item);
@@ -43,7 +42,6 @@ namespace MarcusRunge.Base.Test
             var notificationWasRaised = false;
             systemUnderTest.PropertyChanged += (_, _) => notificationWasRaised = true;
 
-            // Act
             systemUnderTest.Name = "Test";
 
             // Assert
@@ -57,14 +55,11 @@ namespace MarcusRunge.Base.Test
         [Fact]
         public void SetProperty_WhenValueChanges_ReturnsTrue()
         {
-            // Arrange
             var systemUnderTest = new TestBindableBase();
             systemUnderTest.DisableNotificationContext();
 
-            // Act
             var result = systemUnderTest.SetNameDirectly("Test", nameof(TestBindableBase.Name));
 
-            // Assert
             Assert.True(result);
             Assert.Equal("Test", systemUnderTest.Name);
         }
@@ -80,10 +75,8 @@ namespace MarcusRunge.Base.Test
             systemUnderTest.DisableNotificationContext();
             systemUnderTest.Name = "Test";
 
-            // Act
             var result = systemUnderTest.SetNameDirectly("Test", nameof(TestBindableBase.Name));
 
-            // Assert
             Assert.False(result);
             Assert.Equal("Test", systemUnderTest.Name);
         }
@@ -193,17 +186,15 @@ namespace MarcusRunge.Base.Test
         [Fact]
         public void OnPropertyChanged_WhenCalledExplicitly_RaisesPropertyChangedWithGivenName()
         {
-            // Arrange
+            // Logical notification names do not have to identify public CLR properties.
             var systemUnderTest = new TestBindableBase();
             systemUnderTest.DisableNotificationContext();
             string? raisedPropertyName = null;
 
             systemUnderTest.PropertyChanged += (_, args) => raisedPropertyName = args.PropertyName;
 
-            // Act
             systemUnderTest.RaisePropertyChanged("CustomProperty");
 
-            // Assert
             Assert.Equal("CustomProperty", raisedPropertyName);
         }
 
@@ -233,7 +224,6 @@ namespace MarcusRunge.Base.Test
         [Fact]
         public void OnPropertyChanged_WhenCalledWithoutSubscribers_DoesNotThrow()
         {
-            // Arrange
             var systemUnderTest = new TestBindableBase();
             systemUnderTest.DisableNotificationContext();
 
@@ -655,6 +645,76 @@ namespace MarcusRunge.Base.Test
                 public SendOrPostCallback Callback { get; } = callback;
 
                 public object? State { get; } = state;
+            }
+        }
+
+        /// <summary>
+        /// Provides deterministic synchronization-context dispatch for unit tests.
+        /// </summary>
+        private sealed class TestSynchronizationContext : SynchronizationContext
+        {
+            private readonly Queue<PostedCallback> _pendingCallbacks = new();
+
+            /// <summary>
+            /// Gets the number of callbacks waiting to be executed.
+            /// </summary>
+            public int PendingCallbackCount
+            {
+                get
+                {
+                    lock (_pendingCallbacks)
+                    {
+                        return _pendingCallbacks.Count;
+                    }
+                }
+            }
+
+            /// <inheritdoc/>
+            public override void Post(SendOrPostCallback callback, object? state)
+            {
+                ArgumentNullException.ThrowIfNull(callback);
+
+                lock (_pendingCallbacks)
+                {
+                    _pendingCallbacks.Enqueue(new PostedCallback(callback, state));
+                }
+            }
+
+            /// <summary>
+            /// Executes all currently pending callbacks on the calling thread.
+            /// </summary>
+            public void ExecutePendingCallbacks()
+            {
+                while (TryDequeue(out var callback))
+                    callback.Callback(callback.State);
+            }
+
+            private bool TryDequeue(out PostedCallback callback)
+            {
+                lock (_pendingCallbacks)
+                {
+                    if (_pendingCallbacks.Count == 0)
+                    {
+                        callback = default;
+                        return false;
+                    }
+
+                    callback = _pendingCallbacks.Dequeue();
+                    return true;
+                }
+            }
+
+            private readonly struct PostedCallback
+            {
+                public PostedCallback(SendOrPostCallback callback, object? state)
+                {
+                    Callback = callback;
+                    State = state;
+                }
+
+                public SendOrPostCallback Callback { get; }
+
+                public object? State { get; }
             }
         }
     }
