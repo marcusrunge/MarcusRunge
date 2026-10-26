@@ -6,6 +6,19 @@
     public class BindableEntityBaseTest
     {
         /// <summary>
+        /// Verifies that the default constructor initializes the database identity with its default value.
+        /// </summary>
+        [Fact]
+        public void Constructor_WithoutId_UsesDefaultId()
+        {
+            // Arrange / Act
+            var systemUnderTest = new TestBindableEntityBase();
+
+            // Assert
+            Assert.Equal(0, systemUnderTest.Id);
+        }
+
+        /// <summary>
         /// Verifies that the constructor assigns the specified database identity.
         /// </summary>
         [Fact]
@@ -20,43 +33,100 @@
 
         /// <summary>
         /// Verifies that changing the database identity raises a property change notification
-        /// through the inherited SetProperty implementation.
+        /// through the inherited <see cref="BindableBase.SetProperty{T}"/> implementation.
         /// </summary>
         [Fact]
-        public void Id_UsesSetProperty_FromBaseClass()
+        public void Id_WhenChanged_UpdatesValueAndRaisesPropertyChanged()
         {
             // Arrange
             var systemUnderTest = new TestBindableEntityBase();
-            string? raisedPropertyName = null;
+            var raisedProperties = new List<string?>();
 
-            systemUnderTest.PropertyChanged += (_, args) => raisedPropertyName = args.PropertyName;
+            systemUnderTest.PropertyChanged += (_, args) => raisedProperties.Add(args.PropertyName);
 
             // Act
             systemUnderTest.Id = 42;
 
             // Assert
             Assert.Equal(42, systemUnderTest.Id);
-            Assert.Equal(nameof(BindableEntityBase.Id), raisedPropertyName);
+            var item = Assert.Single(raisedProperties);
+            Assert.Equal(nameof(BindableEntityBase.Id), item);
+        }
+
+        /// <summary>
+        /// Verifies that assigning the current database identity does not raise a property change notification.
+        /// </summary>
+        [Fact]
+        public void Id_WhenAssignedCurrentValue_DoesNotRaisePropertyChanged()
+        {
+            // Arrange
+            var systemUnderTest = new TestBindableEntityBase(42);
+            var notificationWasRaised = false;
+
+            systemUnderTest.PropertyChanged += (_, _) => notificationWasRaised = true;
+
+            // Act
+            systemUnderTest.Id = 42;
+
+            // Assert
+            Assert.False(notificationWasRaised);
+            Assert.Equal(42, systemUnderTest.Id);
+        }
+
+        /// <summary>
+        /// Verifies that an identity notification uses the concrete entity instance as its sender.
+        /// </summary>
+        [Fact]
+        public void Id_WhenChanged_UsesEntityAsPropertyChangedSender()
+        {
+            // Arrange
+            var systemUnderTest = new TestBindableEntityBase();
+            object? sender = null;
+
+            systemUnderTest.PropertyChanged += (eventSender, _) => sender = eventSender;
+
+            // Act
+            systemUnderTest.Id = 42;
+
+            // Assert
+            Assert.Same(systemUnderTest, sender);
         }
 
         /// <summary>
         /// Verifies that changing the database concurrency token does not raise a property change notification.
         /// </summary>
         [Fact]
-        public void RowVersion_DoesNotRaisePropertyChanged()
+        public void RowVersion_WhenChanged_DoesNotRaisePropertyChanged()
         {
             // Arrange
             var systemUnderTest = new TestBindableEntityBase();
-            var raised = false;
+            var notificationWasRaised = false;
 
-            systemUnderTest.PropertyChanged += (_, _) => raised = true;
+            systemUnderTest.PropertyChanged += (_, _) => notificationWasRaised = true;
 
             // Act
             systemUnderTest.RowVersion = [1, 2, 3];
 
             // Assert
-            Assert.False(raised);
+            Assert.False(notificationWasRaised);
             Assert.Equal(new byte[] { 1, 2, 3 }, systemUnderTest.RowVersion);
+        }
+
+        /// <summary>
+        /// Verifies that assigning the database concurrency token stores the supplied array reference.
+        /// </summary>
+        [Fact]
+        public void RowVersion_WhenAssigned_PreservesArrayReference()
+        {
+            // Arrange
+            var systemUnderTest = new TestBindableEntityBase();
+            byte[] rowVersion = [1, 2, 3];
+
+            // Act
+            systemUnderTest.RowVersion = rowVersion;
+
+            // Assert
+            Assert.Same(rowVersion, systemUnderTest.RowVersion);
         }
 
         /// <summary>
