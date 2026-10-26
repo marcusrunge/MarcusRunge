@@ -21,9 +21,7 @@ namespace MarcusRunge.Base
         private static CreationState? _currentCreationState;
 
         private static CreationState _globalState = new();
-
         private readonly object _createdHandlersSynchronization = new();
-
         private EventHandler? _createdHandlers;
         private CreationState? _creationState;
 
@@ -33,6 +31,7 @@ namespace MarcusRunge.Base
             add
             {
                 if (value is null) return;
+
                 if (IsCreated)
                 {
                     InvokeCreatedHandler(value);
@@ -47,11 +46,13 @@ namespace MarcusRunge.Base
                         return;
                     }
                 }
+
                 InvokeCreatedHandler(value);
             }
             remove
             {
                 if (value is null) return;
+
                 lock (_createdHandlersSynchronization)
                 {
                     _createdHandlers -= value;
@@ -175,11 +176,14 @@ namespace MarcusRunge.Base
             lock (_globalStateSynchronization)
             {
                 var state = _globalState;
+
                 lock (state.Synchronization)
                 {
                     var synchronousCreationIsRunning = state.CreationStarted && !state.CreationCompletion.Task.IsCompleted;
                     var asynchronousInitializationIsRunning = state.Initialization is { IsCompleted: false };
+
                     if (synchronousCreationIsRunning || asynchronousInitializationIsRunning) throw new InvalidOperationException($"The global creation state for '{typeof(TClass).FullName}' cannot be reset while initialization is running.");
+
                     _globalState = new CreationState();
                 }
             }
@@ -219,15 +223,30 @@ namespace MarcusRunge.Base
         /// </remarks>
         protected virtual void OnCreatedSubscriberException(Exception exception) => Debug.WriteLine($"An OnCreated subscriber threw an exception: {exception}");
 
+        /// <summary>
+        /// Handles an exception raised while publishing a lifecycle property change notification.
+        /// </summary>
+        /// <param name="propertyName">The name of the lifecycle property whose notification failed.</param>
+        /// <param name="exception">The property change subscriber exception.</param>
+        /// <remarks>
+        /// Property change subscriber failures do not fail synchronous creation, asynchronous initialization,
+        /// or completed lifecycle publication. Derived classes may override this method to integrate diagnostic
+        /// reporting. Exceptions thrown by this method are isolated as well.
+        /// </remarks>
+        protected virtual void OnCreationStateNotificationException(string propertyName, Exception exception) => Debug.WriteLine($"A PropertyChanged subscriber threw an exception while publishing the creation state property '{propertyName}': {exception}");
+
         private static bool ContextsAreIdentical(TBase first, TBase second) => typeof(TBase).IsValueType ? EqualityComparer<TBase>.Default.Equals(first, second) : ReferenceEquals(first, second);
 
         private static TClass CreateCore(CreationState state, TBase context)
         {
             var startsCreation = false;
+
             lock (state.Synchronization)
             {
                 ValidateContext(state, context);
+
                 if (state.CreationException is { } creationException) ExceptionDispatchInfo.Capture(creationException).Throw();
+
                 if (!state.CreationStarted)
                 {
                     state.CreationStarted = true;
@@ -263,6 +282,7 @@ namespace MarcusRunge.Base
         {
             if (typeof(TBase).IsValueType) throw new InvalidOperationException($"The scoped lifetime requires the initialization context type '{typeof(TBase).FullName}' to be a reference type.");
             if (context is not object scope) throw new ArgumentNullException(nameof(context), "The scoped lifetime requires a non-null initialization context.");
+
             return _scopedStates.GetValue(scope, CreateScopedState);
         }
 
@@ -291,10 +311,12 @@ namespace MarcusRunge.Base
                 // is published before user-defined asynchronous initialization can complete.
                 var initializationStart = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
                 var initialization = instance.InitializeAsync(context, initializationStart.Task);
+
                 lock (state.Synchronization)
                 {
                     state.Initialization = initialization;
                 }
+
                 instance.RaiseCreationStateChanged();
                 state.CreationCompletion.TrySetResult(instance);
                 initializationStart.TrySetResult(null);
@@ -306,6 +328,7 @@ namespace MarcusRunge.Base
                     state.CreationException = exception;
                     state.InitializationException = exception;
                 }
+
                 state.CreationCompletion.TrySetException(exception);
             }
             finally
@@ -316,8 +339,7 @@ namespace MarcusRunge.Base
 
         private static void ThrowIfCreationIsReentrant(CreationState state)
         {
-            if (ReferenceEquals(_currentCreationState, state))
-                throw new InvalidOperationException($"Recursive creation of '{typeof(TClass).FullName}' for the same creation state is not supported.");
+            if (ReferenceEquals(_currentCreationState, state)) throw new InvalidOperationException($"Recursive creation of '{typeof(TClass).FullName}' for the same creation state is not supported.");
         }
 
         private static void ValidateContext(CreationState state, TBase context)
@@ -328,7 +350,9 @@ namespace MarcusRunge.Base
                 state.HasInitializationContext = true;
                 return;
             }
+
             if (ContextsAreIdentical(state.InitializationContext, context)) return;
+
             throw new InvalidOperationException($"The creation state for '{typeof(TClass).FullName}' was already initialized with a different context. Use '{CreationLifetime.Scoped}' with a stable context instance or '{CreationLifetime.Transient}' for an independent object graph.");
         }
 
@@ -353,13 +377,16 @@ namespace MarcusRunge.Base
             using (cancellationToken.Register(static state => ((TaskCompletionSource<object?>)state!).TrySetResult(null), cancellationCompletion))
             {
                 var completedTask = await Task.WhenAny(task, cancellationCompletion.Task).ConfigureAwait(false);
+
                 // Initialization takes precedence when completion and cancellation become observable together.
                 if (task.IsCompleted)
                 {
                     await task.ConfigureAwait(false);
                     return;
                 }
+
                 if (completedTask == cancellationCompletion.Task) throw new OperationCanceledException(cancellationToken);
+
                 await task.ConfigureAwait(false);
             }
         }
@@ -376,9 +403,11 @@ namespace MarcusRunge.Base
         private async Task InitializeAsync(TBase context, Task initializationStart)
         {
             var state = GetRequiredCreationState();
+
             // Do not enter user-defined asynchronous initialization until the Initialization property
             // and the initial bindable lifecycle state have been published.
             await initializationStart.ConfigureAwait(false);
+
             try
             {
                 await OnCreateAsync(context, CancellationToken.None).ConfigureAwait(false);
@@ -390,7 +419,9 @@ namespace MarcusRunge.Base
                 RaiseCreationStateChanged();
                 throw;
             }
-            // Publish the completed lifecycle state before invoking OnCreated subscribers.
+
+            // Lifecycle notification failures must not convert successful domain initialization into
+            // a failed initialization or prevent the guaranteed OnCreated publication.
             RaiseCreationStateChanged();
             RaiseCreated();
         }
@@ -410,21 +441,36 @@ namespace MarcusRunge.Base
         private void RaiseCreated()
         {
             EventHandler? handlers;
+
             lock (_createdHandlersSynchronization)
             {
                 handlers = _createdHandlers;
                 _createdHandlers = null;
             }
+
             if (handlers is null) return;
+
             foreach (var subscriber in handlers.GetInvocationList()) InvokeCreatedHandler((EventHandler)subscriber);
         }
 
         private void RaiseCreationStateChanged()
         {
-            OnPropertyChanged(nameof(Initialization));
-            OnPropertyChanged(nameof(InitializationException));
-            OnPropertyChanged(nameof(IsInitializing));
-            OnPropertyChanged(nameof(IsCreated));
+            RaiseCreationStatePropertyChanged(nameof(Initialization));
+            RaiseCreationStatePropertyChanged(nameof(InitializationException));
+            RaiseCreationStatePropertyChanged(nameof(IsInitializing));
+            RaiseCreationStatePropertyChanged(nameof(IsCreated));
+        }
+
+        private void RaiseCreationStatePropertyChanged(string propertyName)
+        {
+            try
+            {
+                OnPropertyChanged(propertyName);
+            }
+            catch (Exception exception)
+            {
+                TryReportCreationStateNotificationException(propertyName, exception);
+            }
         }
 
         private void TryReportCreatedSubscriberException(Exception exception)
@@ -439,11 +485,22 @@ namespace MarcusRunge.Base
             }
         }
 
+        private void TryReportCreationStateNotificationException(string propertyName, Exception exception)
+        {
+            try
+            {
+                OnCreationStateNotificationException(propertyName, exception);
+            }
+            catch (Exception diagnosticException)
+            {
+                Debug.WriteLine($"Reporting a creation state notification exception for property '{propertyName}' failed: {diagnosticException}");
+            }
+        }
+
         private sealed class CreationState
         {
             internal readonly TaskCompletionSource<TClass> CreationCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
             internal readonly object Synchronization = new();
-
             internal Exception? CreationException;
             internal bool CreationStarted;
             internal bool HasInitializationContext;
