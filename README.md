@@ -2,18 +2,18 @@
 
 A collection of reusable .NET libraries for data binding, controlled service initialization, Entity Framework Core, localization, networking, and development certificates.
 
-The repository contains focused NuGet packages targeting .NET Standard 2.1, .NET 10, and .NET 10 for Windows.
+The repository contains focused NuGet packages targeting .NET Standard 2.1, .NET 11, and .NET 11 for Windows.
 
 ## Packages
 
 | Package | Target framework | Purpose |
 |---|---|---|
 | `MarcusRunge.Base` | `netstandard2.1` | Bindable base classes, entities, and controlled service initialization |
-| `MarcusRunge.Base.EntityFramework` | `net10.0` | Entity Framework Core configuration for bindable entities |
+| `MarcusRunge.Base.EntityFramework` | `net11.0` | Entity Framework Core configuration for bindable entities |
 | `MarcusRunge.Toolbox.Localization.Core` | `netstandard2.1` | Resource-based enum localization |
-| `MarcusRunge.Toolbox.Localization.Wpf` | `net10.0-windows` | WPF enum binding and localization |
-| `MarcusRunge.Toolbox.Network` | `net10.0` | IPv4 and IPv6 subnet, complement, and scanning utilities |
-| `MarcusRunge.Toolbox.Security` | `net10.0` | Windows development-certificate generation |
+| `MarcusRunge.Toolbox.Localization.Wpf` | `net11.0-windows` | WPF enum binding and localization |
+| `MarcusRunge.Toolbox.Network` | `net11.0` | IPv4 and IPv6 subnet, complement, and scanning utilities |
+| `MarcusRunge.Toolbox.Security` | `net11.0` | Windows development-certificate generation |
 
 ## MarcusRunge.Base
 
