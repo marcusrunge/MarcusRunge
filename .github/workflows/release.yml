@@ -5,47 +5,39 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   publish:
     runs-on: windows-latest
     environment: nuget
+
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          ref: ${{ github.ref }}
 
       - name: Ensure tag is based on release branch
         shell: pwsh
         run: |
           git fetch origin release
-          git branch --remotes --contains HEAD
 
-          $isOnRelease = git branch --remotes --contains HEAD | Select-String "origin/release"
-
-          if (-not $isOnRelease) {
-            Write-Host "Tag is NOT based on release branch -> abort"
-            exit 1
-          } else {
-            Write-Host "✅ Tag is based on release branch"
-          }
-
-      - name: Ensure tag is based on release branch
-        shell: pwsh
-        run: |
-          git fetch origin release
-          git branch --remotes --contains HEAD
-
-          $isOnRelease = git branch --remotes --contains HEAD | Select-String "origin/release"
+          $isOnRelease = git branch --remotes --contains HEAD |
+            Select-String "origin/release"
 
           if (-not $isOnRelease) {
             Write-Host "Tag is NOT based on release branch -> abort"
             exit 1
-          } else {
-            Write-Host "✅ Tag is based on release branch"
           }
+
+          Write-Host "Tag is based on release branch"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -61,19 +53,25 @@ jobs:
       - name: Pack
         run: dotnet pack MarcusRunge.slnx --configuration Release --no-build --output ./artifacts
 
+      - name: NuGet Login
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: MarcusRunge
+
       - name: Push to NuGet
         shell: pwsh
         run: |
-          $packages = Get-ChildItem -Path ./artifacts -Filter *.nupkg -Recurse |
+          $packages = Get-ChildItem ./artifacts -Filter *.nupkg -Recurse |
             Where-Object { $_.Name -notlike "*.symbols.nupkg" }
 
           if ($packages.Count -eq 0) {
-            throw "No .nupkg files found in ./artifacts"
+            throw "No .nupkg files found."
           }
 
           foreach ($package in $packages) {
             dotnet nuget push $package.FullName `
-              --api-key "${{ secrets.NUGET_API_KEY }}" `
+              --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" `
               --source "https://api.nuget.org/v3/index.json" `
               --skip-duplicate
           }
