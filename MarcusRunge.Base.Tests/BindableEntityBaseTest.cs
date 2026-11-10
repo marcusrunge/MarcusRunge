@@ -85,8 +85,6 @@
 
             systemUnderTest.PropertyChanged += (eventSender, _) => sender = eventSender;
 
-            systemUnderTest.PropertyChanged += (_, args) => raisedPropertyName = args.PropertyName;
-
             // Act
             systemUnderTest.Id = 42;
 
