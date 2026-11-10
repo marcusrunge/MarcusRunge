@@ -57,7 +57,7 @@ jobs:
         id: login
         uses: NuGet/login@v1
         with:
-          user: MarcusRunge
+          user: marcus.runge
 
       - name: Push to NuGet
         shell: pwsh
